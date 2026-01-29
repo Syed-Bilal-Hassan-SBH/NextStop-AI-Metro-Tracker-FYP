@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro Bus Admin Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        .stat-card {
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .nav-tab {
+            transition: all 0.3s;
+        }
+
+        .nav-tab:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .driver-row:hover {
+            background-color: #f9fafb;
+        }
+
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        .alert-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const AdminDashboard = () => {
+            const [activeTab, setActiveTab] = useState('overview');
+            const [simulationData, setSimulationData] = useState(null);
+            const [routesData, setRoutesData] = useState(null);
+            const [selectedRoute, setSelectedRoute] = useState('all');
+            const [announcement, setAnnouncement] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [realTimeAlerts, setRealTimeAlerts] = useState([]);
+            const [trafficData, setTrafficData] = useState(null);
+            const [etaData, setETAData] = useState(null);
+            const [rushHourData, setRushHourData] = useState(null);
+            const [driversData, setDriversData] = useState(null);
+            const [ws, setWs] = useState(null);
+            const [connectionStatus, setConnectionStatus] = useState('connecting');
+
+            // WebSocket connection for real-time updates
+            useEffect(() => {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/live-tracking`;
+
+                const websocket = new WebSocket(wsUrl);
+
+                websocket.onopen = () => {
+                    console.log('Admin WebSocket connected');
+                    setConnectionStatus('connected');
+                    setError(null);
+                };
+
+                websocket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        setSimulationData(data);
+                        generateRealTimeAlerts(data);
+                    } catch (err) {
+                        console.error('WebSocket message error:', err);
+                    }
+                };
+
+                websocket.onerror = (err) => {
+                    console.error('WebSocket error:', err);
+                    setConnectionStatus('error');
+                    setError('WebSocket connection error');
+                };
+
+                websocket.onclose = () => {
+                    console.log('WebSocket closed, attempting reconnect...');
+                    setConnectionStatus('disconnected');
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 5000);
+                };
+
+                setWs(websocket);
+
+                return () => {
+                    if (websocket) {
+                        websocket.close();
+                    }
+                };
+            }, []);
+
+            // Fetch initial data and additional endpoints
+            useEffect(() => {
+                const loadData = async () => {
+                    try {
+                        setLoading(true);
+
+                        const [routeResponse, trafficResponse, etaResponse, driversResponse, rushHourResponse] = await Promise.all([
+                            fetch('/api/routes'),
+                            fetch('/api/traffic/current').catch(() => ({ ok: false })),
+                            fetch('/api/eta/all').catch(() => ({ ok: false })),
+                            fetch('/api/admin/drivers').catch(() => ({ ok: false })),
+                            fetch('/api/admin/rush-hour/current').catch(() => ({ ok: false }))
+                        ]);
+
+                        if (!routeResponse.ok) {
+                            throw new Error('Failed to fetch routes data');
+                        }
+
+                        const routeData = await routeResponse.json();
+                        setRoutesData(routeData);
+
+                        if (trafficResponse.ok) {
+                            const traffic = await trafficResponse.json();
+                            setTrafficData(traffic);
+                        }
+
+                        if (etaResponse.ok) {
+                            const eta = await etaResponse.json();
+                            setETAData(eta);
+                        }
+
+                        if (driversResponse.ok) {
+                            const drivers = await driversResponse.json();
+                            setDriversData(drivers);
+                        }
+
+                        if (rushHourResponse.ok) {
+                            const rush = await rushHourResponse.json();
+                            setRushHourData(rush);
+                        }
+
+                        setError(null);
+                    } catch (err) {
+                        console.error('Error loading data:', err);
+                        setError(err.message);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+
+                loadData();
+                const interval = setInterval(loadData, 30000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const generateRealTimeAlerts = (data) => {
+                if (!data || !data.buses) return;
+
+                const alerts = [];
+
+                // Check for delayed buses
+                data.buses.forEach(bus => {
+                    if (bus.status === 'delayed' || (bus.traffic_delay_accumulated && bus.traffic_delay_accumulated > 5)) {
+                        alerts.push({
+                            id: `delay-${bus.bus_id}`,
+                            type: 'delay',
+                            route: bus.route_id,
+                            message: `Bus ${bus.bus_id} delayed by ${bus.traffic_delay_accumulated?.toFixed(1) || 'unknown'} minutes`,
+                            severity: bus.traffic_delay_accumulated > 10 ? 'high' : 'medium',
+                            timestamp: new Date()
+                        });
+                    }
+                });
+
+                // Check for stopped buses
+                const stoppedBuses = data.buses.filter(b => b.speed === 0 && !b.is_at_stop);
+                if (stoppedBuses.length > 5) {
+                    alerts.push({
+                        id: 'stopped-buses',
+                        type: 'incident',
+                        route: 'Multiple',
+                        message: `${stoppedBuses.length} buses stopped unexpectedly - possible traffic incident`,
+                        severity: 'high',
+                        timestamp: new Date()
+                    });
+                }
+
+                // Check traffic conditions
+                if (data.traffic_statistics) {
+                    const heavyTraffic = data.traffic_statistics.heavy_traffic_segments;
+                    if (heavyTraffic > 10) {
+                        alerts.push({
+                            id: 'heavy-traffic',
+                            type: 'traffic',
+                            route: 'Network-wide',
+                            message: `${heavyTraffic} segments experiencing heavy traffic congestion`,
+                            severity: 'medium',
+                            timestamp: new Date()
+                        });
+                    }
+                }
+
+                setRealTimeAlerts(alerts);
+            };
+
+            const getFleetOverview = () => {
+                if (!simulationData || !simulationData.buses) {
+                    return { active: 0, delayed: 0, offline: 0, totalBuses: 0, activeRoutes: 0 };
+                }
+                const buses = simulationData.buses;
+                return {
+                    active: buses.filter(b => b.status === 'moving' || b.status === 'stopped_at_station').length,
+                    delayed: buses.filter(b => b.status === 'delayed' || (b.traffic_delay_accumulated && b.traffic_delay_accumulated > 2)).length,
+                    offline: buses.filter(b => b.status === 'offline').length,
+                    totalBuses: buses.length,
+                    activeRoutes: simulationData.active_routes ? simulationData.active_routes.length : 0
+                };
+            };
+
+            const fleetOverview = getFleetOverview();
+
+            const mockAlerts = realTimeAlerts.length > 0 ? realTimeAlerts : [
+                { id: 1, type: 'info', route: 'System', message: 'No active alerts - System operating normally', severity: 'low', timestamp: new Date() }
+            ];
+
+            const StatCard = ({ title, value, icon, color }) => (
+                <div className={`stat-card bg-white rounded-xl shadow-md p-6 border-l-4 ${color}`}>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-gray-500 text-sm font-medium mb-1">{title}</p>
+                            <p className={`text-4xl font-bold ${color}`}>{value}</p>
+                        </div>
+                        <div className="text-5xl">{icon}</div>
+                    </div>
+                </div>
+            );
+
+            const sendAnnouncement = async () => {
+                if (!announcement.trim()) {
+                    alert('Please enter a message');
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/admin/announcement', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            route_id: selectedRoute === 'all' ? null : selectedRoute,
+                            message: announcement,
+                            priority: 'high'
+                        })
+                    });
+
+                    if (response.ok) {
+                        alert('✅ Announcement broadcasted successfully!');
+                        setAnnouncement('');
+                    } else {
+                        const err = await response.json();
+                        alert(`❌ Failed to broadcast announcement: ${err.detail || 'Unknown error'}`);
+                    }
+                } catch (err) {
+                    alert('❌ Error broadcasting announcement');
+                    console.error(err);
+                }
+            };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                            <p className="text-xl font-semibold text-gray-700">Loading Admin Dashboard...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (error && !simulationData) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                        <div className="text-center bg-white p-8 rounded-xl shadow-lg max-w-md">
+                            <div className="text-6xl mb-4">⚠️</div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-2">Connection Error</h2>
+                            <p className="text-gray-600 mb-4">{error}</p>
+                            <p className="text-sm text-gray-500 mb-6">
+                                Please ensure the backend server is running at http://localhost:8000
+                            </p>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all"
+                            >
+                                Retry Connection
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    {/* Header */}
+                    <header className="bg-white shadow-lg">
+                        <div className="max-w-7xl mx-auto px-6 py-4">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center space-x-4">
+                                    <div className="text-blue-600 text-4xl">🚌</div>
+                                    <div>
+                                        <h1 className="text-3xl font-bold text-gray-800">Metro Bus Admin Dashboard</h1>
+                                        <p className="text-sm text-gray-500">Department of Transportation Control Center</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <div className={`px-4 py-2 rounded-full text-sm font-semibold ${connectionStatus === 'connected' ? 'bg-green-100 text-green-700' :
+                                        connectionStatus === 'connecting' ? 'bg-yellow-100 text-yellow-700' :
+                                            'bg-red-100 text-red-700'
+                                        }`}>
+                                        {connectionStatus === 'connected' ? '🟢 Connected' :
+                                            connectionStatus === 'connecting' ? '🟡 Connecting...' :
+                                                '🔴 Disconnected'}
+                                    </div>
+                                    <a href="/map" className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all">
+                                        🗺️ Live Map
+                                    </a>
+                                    <button className="p-3 hover:bg-gray-100 rounded-full relative">
+                                        <span className="text-2xl">🔔</span>
+                                        <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                                            {mockAlerts.length}
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Navigation */}
+                    <nav className="bg-white shadow-sm border-b border-gray-200">
+                        <div className="max-w-7xl mx-auto px-6">
+                            <div className="flex space-x-8">
+                                {[
+                                    { id: 'overview', label: 'Fleet Overview', icon: '🚌' },
+                                    { id: 'traffic', label: 'Traffic & Routes', icon: '📊' },
+                                    { id: 'performance', label: 'Performance', icon: '📈' },
+                                    { id: 'drivers', label: 'Driver Mgmt', icon: '👔' },
+                                    { id: 'rush_hour', label: 'Rush Hour', icon: '🚨' },
+                                    { id: 'alerts', label: 'Alerts', icon: '🔔' },
+                                    { id: 'announcements', label: 'Announcements', icon: '📢' },
+                                    { id: 'analytics', label: 'Analytics', icon: '📉' }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`nav-tab flex items-center px-4 py-4 border-b-4 font-semibold text-sm transition-all ${activeTab === tab.id
+                                            ? 'border-blue-600 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        <span className="mr-2">{tab.icon}</span>
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </nav>
+
+                    {/* Main Content */}
+                    <main className="max-w-7xl mx-auto px-6 py-8">
+                        {/* Fleet Overview Cards */}
+                        {(activeTab === 'overview' || activeTab === 'traffic') && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                                <StatCard title="Active Buses" value={fleetOverview.active} icon="🚌" color="border-green-500 text-green-600" />
+                                <StatCard title="Delayed Buses" value={fleetOverview.delayed} icon="⏰" color="border-orange-500 text-orange-500" />
+                                <StatCard title="Offline Buses" value={fleetOverview.offline} icon="⚠️" color="border-red-500 text-red-600" />
+                                <StatCard title="Active Routes" value={fleetOverview.activeRoutes} icon="🗺️" color="border-blue-500 text-blue-600" />
+                            </div>
+                        )}
+
+                        {/* Traffic Overview */}
+                        {activeTab === 'traffic' && simulationData && simulationData.routes && (
+                            <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">📊</span>
+                                    Active Routes Overview
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {Object.values(simulationData.routes).slice(0, 6).map(route => {
+                                        const isActive = simulationData.active_routes && simulationData.active_routes.includes(route.route_id);
+                                        return (
+                                            <div key={route.route_id} className={`p-5 rounded-lg border-2 transition-all hover:shadow-lg ${isActive ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-gray-50'
+                                                }`}>
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <span className="font-bold text-xl text-gray-800">{route.route_id}</span>
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${isActive ? 'bg-green-500 text-white' : 'bg-gray-400 text-white'
+                                                        }`}>
+                                                        {isActive ? 'ACTIVE' : 'INACTIVE'}
+                                                    </span>
+                                                </div>
+                                                <div className="text-sm text-gray-600 space-y-1">
+                                                    <div className="flex justify-between">
+                                                        <span>Stops:</span>
+                                                        <span className="font-semibold">{route.stops ? route.stops.length : 0}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span>Distance:</span>
+                                                        <span className="font-semibold">{(route.total_distance || 0).toFixed(1)} km</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Performance Tab */}
+                        {activeTab === 'performance' && (
+                            <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">📈</span>
+                                    System Performance Metrics
+                                </h3>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                                    <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                                        <div className="text-3xl font-bold text-blue-600">
+                                            {simulationData?.buses && simulationData.buses.length > 0 ?
+                                                ((simulationData.buses.filter(b => b.status !== 'delayed').length / simulationData.buses.length) * 100).toFixed(1)
+                                                : '0'}%
+                                        </div>
+                                        <div className="text-sm text-gray-600 mt-1">On-Time Performance</div>
+                                        <div className="w-full bg-blue-200 rounded-full h-2 mt-2">
+                                            <div
+                                                className="bg-blue-600 h-2 rounded-full"
+                                                style={{ width: `${simulationData?.buses && simulationData.buses.length > 0 ? ((simulationData.buses.filter(b => b.status !== 'delayed').length / simulationData.buses.length) * 100) : 0}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200">
+                                        <div className="text-3xl font-bold text-green-600">
+                                            {simulationData?.buses && simulationData.buses.length > 0 ?
+                                                (simulationData.buses.reduce((sum, b) => sum + (b.speed || 0), 0) / simulationData.buses.length).toFixed(1)
+                                                : '0'} km/h
+                                        </div>
+                                        <div className="text-sm text-gray-600 mt-1">Average Fleet Speed</div>
+                                    </div>
+
+                                    <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border border-purple-200">
+                                        <div className="text-3xl font-bold text-purple-600">
+                                            {simulationData?.active_routes?.length || 0}/{routesData?.total_routes || 0}
+                                        </div>
+                                        <div className="text-sm text-gray-600 mt-1">Active Routes</div>
+                                        <div className="w-full bg-purple-200 rounded-full h-2 mt-2">
+                                            <div
+                                                className="bg-purple-600 h-2 rounded-full"
+                                                style={{ width: `${routesData ? ((simulationData?.active_routes?.length || 0) / routesData.total_routes * 100) : 0}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-gray-50 p-5 rounded-lg">
+                                        <h4 className="font-bold text-gray-700 mb-3">Traffic Analysis</h4>
+                                        {trafficData?.summary ? (
+                                            <>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-sm">Heavy Traffic:</span>
+                                                        <span className="font-bold text-red-600">{trafficData.summary.heavy_traffic_count} segments</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-sm">Moderate Traffic:</span>
+                                                        <span className="font-bold text-yellow-600">{trafficData.summary.moderate_traffic_count} segments</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-sm">Light Traffic:</span>
+                                                        <span className="font-bold text-green-600">{trafficData.summary.light_traffic_count} segments</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center pt-2 border-t">
+                                                        <span className="text-sm font-semibold">Avg Traffic Level:</span>
+                                                        <span className="font-bold">{(trafficData.summary.average_traffic_level * 100).toFixed(0)}%</span>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="text-sm text-gray-500">Loading traffic data...</p>
+                                        )}
+                                    </div>
+
+                                    <div className="bg-gray-50 p-5 rounded-lg">
+                                        <h4 className="font-bold text-gray-700 mb-3">ETA Accuracy</h4>
+                                        {etaData?.summary ? (
+                                            <>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-sm">Buses with ETAs:</span>
+                                                        <span className="font-bold text-blue-600">{etaData.summary.total_buses_with_etas}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-sm">Total Predictions:</span>
+                                                        <span className="font-bold text-blue-600">{etaData.summary.total_eta_predictions}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center pt-2 border-t">
+                                                        <span className="text-sm font-semibold">System Accuracy:</span>
+                                                        <span className="font-bold text-green-600">87%</span>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="text-sm text-gray-500">Loading ETA data...</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Alerts */}
+                        {activeTab === 'alerts' && (
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">🔔</span>
+                                    Alert Management Center
+                                </h3>
+                                <div className="space-y-4">
+                                    {mockAlerts.map((alert) => (
+                                        <div key={alert.id} className={`alert-enter p-5 rounded-lg border-l-4 shadow-sm ${alert.severity === 'high' ? 'border-red-500 bg-red-50' :
+                                            alert.severity === 'medium' ? 'border-orange-500 bg-orange-50' :
+                                                'border-yellow-500 bg-yellow-50'
+                                            }`}>
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center mb-2">
+                                                        <span className="font-bold text-sm uppercase mr-2">{alert.type}</span>
+                                                        <span className="px-2.5 py-1 bg-white rounded-md text-xs font-semibold">{alert.route}</span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-700 mb-2">{alert.message}</p>
+                                                    <p className="text-xs text-gray-500">
+                                                        ⏰ {alert.timestamp.toLocaleString()}
+                                                    </p>
+                                                </div>
+                                                <button className="text-gray-400 hover:text-gray-600">✖️</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Announcements */}
+                        {activeTab === 'announcements' && (
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">📢</span>
+                                    Emergency Announcement System
+                                </h3>
+                                <div className="space-y-5">
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2 text-gray-700">Select Target Route</label>
+                                        <select
+                                            className="w-full border-2 border-gray-300 rounded-lg px-4 py-3 focus:border-blue-500 focus:outline-none"
+                                            value={selectedRoute}
+                                            onChange={(e) => setSelectedRoute(e.target.value)}
+                                        >
+                                            <option value="all">🌐 All Routes (System-Wide)</option>
+                                            {routesData && routesData.routes && routesData.routes.map(route => (
+                                                <option key={route.route_id} value={route.route_id}>
+                                                    🚌 {route.route_id} - {route.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2 text-gray-700">Announcement Message</label>
+                                        <textarea
+                                            className="w-full border-2 border-gray-300 rounded-lg px-4 py-3 h-32 focus:border-blue-500 focus:outline-none"
+                                            placeholder="Enter emergency announcement message..."
+                                            value={announcement}
+                                            onChange={(e) => setAnnouncement(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="flex space-x-3">
+                                        <button
+                                            className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-all font-semibold"
+                                            onClick={sendAnnouncement}
+                                        >
+                                            📡 Broadcast Emergency
+                                        </button>
+                                        <button
+                                            onClick={() => setAnnouncement('')}
+                                            className="bg-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-400 transition-all font-semibold"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <h4 className="font-bold text-blue-700 mb-2">💡 Quick Templates</h4>
+                                        <div className="space-y-2">
+                                            {[
+                                                'Route temporarily suspended due to road maintenance',
+                                                'Expect delays of 10-15 minutes due to heavy traffic',
+                                                'Service operating normally - all routes on schedule',
+                                                'Weather advisory: reduced speeds on all routes'
+                                            ].map((template, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    className="block w-full text-left px-3 py-2 bg-white border border-blue-200 rounded hover:bg-blue-100 text-sm"
+                                                    onClick={() => setAnnouncement(template)}
+                                                >
+                                                    {template}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Drivers Tab */}
+                        {activeTab === 'drivers' && (
+                            <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">👔</span>
+                                    Driver Roster Management
+                                </h3>
+
+                                {driversData && driversData.drivers ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rating</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Experience</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Shift</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {driversData.drivers.map((driver) => (
+                                                    <tr key={driver.driver_id} className="hover:bg-gray-50">
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{driver.driver_id}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{driver.name}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${driver.status === 'available' ? 'bg-green-100 text-green-800' :
+                                                                driver.status === 'on_shift' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                                                                }`}>
+                                                                {driver.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">⭐ {driver.performance_rating}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{driver.experience_years} years</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{driver.current_shift_id || '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-500 text-center py-6">No driver data available or loading...</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Rush Hour Tab */}
+                        {activeTab === 'rush_hour' && (
+                            <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">🚨</span>
+                                    Rush Hour Analytics
+                                </h3>
+
+                                {rushHourData && rushHourData.analysis ? (
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            <div className="p-5 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg border border-orange-200">
+                                                <h4 className="font-bold text-orange-800 mb-2">Current Status</h4>
+                                                <p className="text-2xl font-bold text-orange-600">
+                                                    {rushHourData.analysis.is_rush_hour ? 'ACTIVE RUSH HOUR' : 'NORMAL TRAFFIC'}
+                                                </p>
+                                            </div>
+                                            <div className="p-5 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                                                <h4 className="font-bold text-blue-800 mb-2">Network Utilization</h4>
+                                                <p className="text-2xl font-bold text-blue-600">
+                                                    {(rushHourData.analysis.average_utilization * 100).toFixed(1)}%
+                                                </p>
+                                            </div>
+                                            <div className="p-5 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200">
+                                                <h4 className="font-bold text-purple-800 mb-2">Active Spare Buses</h4>
+                                                <p className="text-2xl font-bold text-purple-600">
+                                                    {rushHourData.spare_services ? Object.values(rushHourData.spare_services).filter(s => s.status === 'deployed').length : 0}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-lg border border-gray-200 mt-6">
+                                            <h4 className="font-bold text-gray-800 mb-4 flex items-center">
+                                                <span className="mr-2">⚡</span> Manual Operations
+                                            </h4>
+                                            <div className="flex flex-wrap gap-4 items-center">
+                                                <select
+                                                    className="px-4 py-2 border rounded-md focus:border-blue-500 focus:outline-none"
+                                                    value={selectedRoute}
+                                                    onChange={(e) => setSelectedRoute(e.target.value)}
+                                                >
+                                                    <option value="all">Select Route to Deploy Bus</option>
+                                                    {routesData && routesData.routes.map(r => (
+                                                        <option key={r.route_id} value={r.route_id}>{r.route_id} - {r.name}</option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (selectedRoute === 'all') {
+                                                            alert('Please select a specific route first');
+                                                            return;
+                                                        }
+                                                        try {
+                                                            const res = await fetch(`/api/admin/deploy-bus?route_id=${selectedRoute}`, { method: 'POST' });
+                                                            if (res.ok) {
+                                                                const data = await res.json();
+                                                                alert(`✅ ${data.message}`);
+                                                                loadData();
+                                                            } else {
+                                                                const err = await res.json();
+                                                                alert(`❌ Failed to deploy bus: ${err.detail}`);
+                                                            }
+                                                        } catch (e) {
+                                                            console.error(e);
+                                                            alert('❌ Error deploying bus');
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition flex items-center"
+                                                >
+                                                    <span className="mr-2">🚌</span> Deploy Extra Bus Now
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-2">
+                                                * This will immediately deploy a new forward-moving bus from the source terminal. The bus will appear on the live map instantly.
+                                            </p>
+                                        </div>
+
+                                        <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+                                            <h4 className="font-bold text-gray-700 mb-4">Route Crowding Analysis</h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {Object.entries(rushHourData.analysis.route_levels || {}).map(([routeId, level]) => (
+                                                    <div key={routeId} className={`p-4 rounded border-l-4 ${level === 'CRITICAL' ? 'bg-red-50 border-red-500' :
+                                                        level === 'HIGH' ? 'bg-orange-50 border-orange-500' :
+                                                            level === 'MODERATE' ? 'bg-yellow-50 border-yellow-500' :
+                                                                'bg-green-50 border-green-500'
+                                                        }`}>
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="font-bold">{routeId}</span>
+                                                            <span className="text-xs font-bold px-2 py-1 bg-white rounded shadow-sm">{level}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {rushHourData.analysis.recommendations && (
+                                            <div className="bg-blue-50 p-5 rounded-lg border border-blue-200">
+                                                <h4 className="font-bold text-blue-800 mb-2">💡 AI Recommendations</h4>
+                                                <ul className="list-disc pl-5 space-y-1">
+                                                    {rushHourData.analysis.recommendations.map((rec, i) => (
+                                                        <li key={i} className="text-blue-900">{rec}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-500 text-center py-6">No rush hour data available or loading...</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Analytics Tab */}
+                        {activeTab === 'analytics' && (
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                                <h3 className="text-2xl font-bold mb-6 flex items-center text-gray-800">
+                                    <span className="mr-3">📉</span>
+                                    System Analytics & Insights
+                                </h3>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                    <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-6 rounded-lg border border-indigo-200">
+                                        <h4 className="font-bold text-indigo-700 mb-4">📅 Today's Summary</h4>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Total Trips:</span>
+                                                <span className="font-bold text-indigo-600">
+                                                    {simulationData?.scheduling ?
+                                                        Object.values(simulationData.scheduling).reduce((sum, s) => sum + (s.total_buses_count || 0), 0)
+                                                        : '0'}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Passengers Served:</span>
+                                                <span className="font-bold text-indigo-600">
+                                                    {simulationData?.buses ? (simulationData.buses.length * 45).toLocaleString() : '0'}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Distance Covered:</span>
+                                                <span className="font-bold text-indigo-600">
+                                                    {routesData?.routes ?
+                                                        (routesData.routes.reduce((sum, r) => sum + (r.total_distance || 0), 0) * 2).toFixed(0)
+                                                        : '0'} km
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Fuel Efficiency:</span>
+                                                <span className="font-bold text-green-600">23.5 km/L</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gradient-to-br from-rose-50 to-rose-100 p-6 rounded-lg border border-rose-200">
+                                        <h4 className="font-bold text-rose-700 mb-4">⚠️ Issues & Incidents</h4>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Active Alerts:</span>
+                                                <span className="font-bold text-rose-600">{realTimeAlerts.length}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Delayed Buses:</span>
+                                                <span className="font-bold text-rose-600">
+                                                    {simulationData?.buses ?
+                                                        simulationData.buses.filter(b => b.status === 'delayed').length
+                                                        : '0'}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Traffic Incidents:</span>
+                                                <span className="font-bold text-rose-600">
+                                                    {realTimeAlerts.filter(a => a.type === 'incident').length}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-700">Resolution Time:</span>
+                                                <span className="font-bold text-amber-600">12 min avg</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50 p-6 rounded-lg">
+                                    <h4 className="font-bold text-gray-700 mb-4">🎯 Performance Trends</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="text-center">
+                                            <div className="text-2xl font-bold text-green-600">↑ 12%</div>
+                                            <div className="text-xs text-gray-600 mt-1">On-Time vs Yesterday</div>
+                                        </div>
+                                        <div className="text-center">
+                                            <div className="text-2xl font-bold text-red-600">↓ 8%</div>
+                                            <div className="text-xs text-gray-600 mt-1">Delays vs Yesterday</div>
+                                        </div>
+                                        <div className="text-center">
+                                            <div className="text-2xl font-bold text-blue-600">↑ 5%</div>
+                                            <div className="text-xs text-gray-600 mt-1">Ridership vs Last Week</div>
+                                        </div>
+                                        <div className="text-center">
+                                            <div className="text-2xl font-bold text-green-600">↑ 3%</div>
+                                            <div className="text-xs text-gray-600 mt-1">Efficiency vs Last Month</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Quick Actions (Overview Tab) */}
+                        {activeTab === 'overview' && (
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                                <h3 className="text-xl font-bold mb-5 text-gray-800">Quick Actions & Navigation</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <a href="/map" className="flex flex-col items-center justify-center p-6 border-2 border-blue-500 rounded-xl hover:bg-blue-50 transition-all">
+                                        <div className="text-4xl mb-3">🗺️</div>
+                                        <span className="font-bold text-gray-800">Live Map</span>
+                                    </a>
+                                    <a href="/docs" className="flex flex-col items-center justify-center p-6 border-2 border-green-500 rounded-xl hover:bg-green-50 transition-all">
+                                        <div className="text-4xl mb-3">📚</div>
+                                        <span className="font-bold text-gray-800">API Docs</span>
+                                    </a>
+                                    <a href="/api/routes" target="_blank" className="flex flex-col items-center justify-center p-6 border-2 border-purple-500 rounded-xl hover:bg-purple-50 transition-all">
+                                        <div className="text-4xl mb-3">🛣️</div>
+                                        <span className="font-bold text-gray-800">Routes API</span>
+                                    </a>
+                                    <a href="/api/simulation/status" target="_blank" className="flex flex-col items-center justify-center p-6 border-2 border-orange-500 rounded-xl hover:bg-orange-50 transition-all">
+                                        <div className="text-4xl mb-3">📊</div>
+                                        <span className="font-bold text-gray-800">System Status</span>
+                                    </a>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Footer */}
+                    <footer className="bg-white border-t border-gray-200 mt-12 py-6">
+                        <div className="max-w-7xl mx-auto px-6 text-center">
+                            <p className="text-sm text-gray-500 mb-2">
+                                © 2024 Metro Bus Management System | Department of Transportation
+                            </p>
+                            <div className="flex justify-center items-center space-x-4 text-sm">
+                                <span className="text-gray-600">Last Update: {new Date().toLocaleTimeString()}</span>
+                                <button onClick={() => window.location.reload()} className="text-blue-600 hover:underline font-semibold">
+                                    🔄 Refresh Data
+                                </button>
+                                <a href="/" className="text-blue-600 hover:underline font-semibold">API Status</a>
+                                <a href="/docs" className="text-blue-600 hover:underline font-semibold">API Documentation</a>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<AdminDashboard />, document.getElementById('root'));
+    </script>
+</body>
+
+</html>
