@@ -54,9 +54,9 @@ type TabType = 'routes' | 'traffic' | 'journey' | 'analytics' | 'admin';
 // ==========================================
 
 const API_CONFIG = {
-  BASE_URL: 'http://10.0.2.2:8000', // Android Emulator
+  BASE_URL: 'http://192.168.18.19:8000', // Android Emulator
   // BASE_URL: 'http://192.168.18.21:8000', // Physical Device
-  WS_URL: 'ws://10.0.2.2:8000/ws/live-tracking',
+  WS_URL: 'ws://192.168.18.19:8000/ws/live-tracking',
 };
 
 class ApiService {

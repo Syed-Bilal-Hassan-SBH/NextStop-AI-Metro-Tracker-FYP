@@ -1,6 +1,6 @@
 export const API_CONFIG = {
-  BASE_URL: 'http://192.168.18.21:8000',  // Updated for physical device on same network
-  WS_URL: 'ws://192.168.18.21:8000/ws/live-tracking',  // Updated WebSocket URL
+  BASE_URL: 'http://192.168.18.19:8000',  // Updated to YOUR computer's IP
+  WS_URL: 'ws://192.168.18.19:8000/ws/live-tracking',  // Updated WebSocket URL
   ENDPOINTS: {
     // Routes
     ROUTES: '/api/routes',
@@ -31,4 +31,3 @@ export const API_CONFIG = {
     ADMIN_ANNOUNCEMENT: '/api/admin/announcement',
   }
 };
-
