@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-
+from eticket_endpoints import setup_eticket_routes
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -129,6 +129,10 @@ async def lifespan(app: FastAPI):
         print("🚌 Initializing enhanced bidirectional bus simulator...")
         simulator = EnhancedMultiRouteBusSimulator(db_manager)
         print("✓ Enhanced bidirectional bus simulator initialized")
+        
+        print("🎫 Initializing E-Ticket system...")
+        setup_eticket_routes(app, simulator)
+        print("✓ E-Ticket system initialized")
         
         print("🗺️ Initializing map visualizer...")
         visualizer = MapVisualizer(simulator)
@@ -1129,7 +1133,148 @@ async def deactivate_all_routes():
     except Exception as e:
         print(f"Error deactivating all routes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+# Setup E-Ticket routes
+#setup_eticket_routes(app, simulator)
 
+@app.post("/api/eticket/login")
+async def eticket_login(request: dict):
+    """Login user"""
+    try:
+        with open(ETICKET_USERS_FILE, 'r') as f:
+            data = json.load(f)
+        
+        # Find user
+        user = next((u for u in data['users'] if u['email'] == request['email']), None)
+        
+        if not user:
+            return {"success": False, "message": "User not found"}
+        
+        if user['password'] != request['password']:
+            return {"success": False, "message": "Invalid password"}
+        
+        # Return user without password
+        user_response = {k: v for k, v in user.items() if k != 'password'}
+        
+        return {
+            "success": True,
+            "message": "Login successful",
+            "user": user_response
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/eticket/active-routes")
+async def get_active_routes_for_ticket():
+    """Get only currently active routes with buses"""
+    try:
+        active_routes_list = []
+        
+        for route_id in simulator.active_routes:
+            route = simulator.routes.get(route_id)
+            if route:
+                # Get active buses for this route
+                route_buses = [bus for bus in simulator.buses.values() 
+                             if bus.route_id == route_id and bus.status == 'active']
+                
+                if route_buses:  # Only include routes with active buses
+                    # Calculate fare based on distance (Rs. 10 per km, minimum Rs. 20)
+                    fare = max(20, int(route.total_distance * 10))
+                    
+                    active_routes_list.append({
+                        "route_id": route_id,
+                        "name": route.name,
+                        "source": route.source,
+                        "destination": route.destination,
+                        "fare": fare,
+                        "active_buses": len(route_buses),
+                        "distance": round(route.total_distance, 1)
+                    })
+        
+        return {
+            "success": True,
+            "routes": active_routes_list,
+            "total_active": len(active_routes_list)
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": str(e), "routes": []}
+
+@app.post("/api/eticket/topup")
+async def eticket_topup(request: dict):
+    """Top up user wallet"""
+    try:
+        with open(ETICKET_USERS_FILE, 'r') as f:
+            data = json.load(f)
+        
+        # Find user
+        user = next((u for u in data['users'] if u['email'] == request['email']), None)
+        
+        if not user:
+            return {"success": False, "message": "User not found"}
+        
+        # Add amount to balance
+        user['balance'] += int(request['amount'])
+        
+        # Save to file
+        with open(ETICKET_USERS_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Top-up successful",
+            "new_balance": user['balance']
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/eticket/purchase")
+async def eticket_purchase(request: dict):
+    """Purchase E-Ticket"""
+    try:
+        with open(ETICKET_USERS_FILE, 'r') as f:
+            data = json.load(f)
+        
+        # Find user
+        user = next((u for u in data['users'] if u['email'] == request['email']), None)
+        
+        if not user:
+            return {"success": False, "message": "User not found"}
+        
+        # Check if route is active
+        if request['route_id'] not in simulator.active_routes:
+            return {"success": False, "message": "Route not active"}
+        
+        # Calculate fare (free for seniors)
+        fare = 0 if user['is_senior'] else int(request['fare'])
+        
+        # Check balance if using wallet
+        if request.get('payment_method') == 'wallet':
+            if user['balance'] < fare:
+                return {"success": False, "message": "Insufficient balance"}
+            
+            user['balance'] -= fare
+            
+            # Save to file
+            with open(ETICKET_USERS_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Ticket purchased successfully",
+            "ticket": {
+                "route_id": request['route_id'],
+                "fare": fare,
+                "is_free": user['is_senior'],
+                "payment_method": request.get('payment_method'),
+                "timestamp": datetime.now().isoformat()
+            },
+            "new_balance": user['balance']
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 # ORIGINAL WEBSOCKET - Enhanced with additional data but preserves original behavior
 @app.websocket("/ws/live-tracking")
 async def websocket_endpoint(websocket: WebSocket):
