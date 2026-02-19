@@ -26,7 +26,7 @@ const MapScreen = () => {
   const [buses, setBuses] = useState<Bus[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState('');
-  const [activeModal, setActiveModal] = useState<'stats' | 'list' | 'eticket' | null>(null);
+  const [activeModal, setActiveModal] = useState<'list' | 'eticket' | null>(null);
   const webviewRef = useRef<any>(null);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
@@ -67,16 +67,82 @@ const MapScreen = () => {
     }
   }, [activeModal]);
 
-  const fwd = buses.filter(b => b.bus_id?.includes('-F-')).length;
-  const rev = buses.filter(b => b.bus_id?.includes('-R-')).length;
-  const routes = [...new Set(buses.map(b => b.route_id))].length;
-
-  const openModal = (type: 'stats' | 'list' | 'eticket') => {
+  const openModal = (type: 'list' | 'eticket') => {
     setActiveModal(type);
   };
 
   const closeModal = () => {
     setActiveModal(null);
+  };
+
+  // CHANGED: Function to hide web UI - runs after page loads
+  const hideWebUI = () => {
+    const jsCode = `
+      (function() {
+        // Wait for DOM to be ready
+        setTimeout(function() {
+          // Hide all UI containers including Enhanced Map Controls
+          var elementsToHide = [
+            '.header',
+            '.department-info', 
+            '.stats-container',
+            '.control-panel',
+            '.eticket-button',
+            'button:not(.leaflet-control button)',
+            '.leaflet-top.leaflet-right > div:not(.leaflet-control-zoom)',
+            'div[style*="position: absolute"]:not(#map):not([id*="leaflet"])',
+            'div:has(> h3)',
+            'div:has(> button)',
+            '[class*="enhanced"]',
+            '[class*="control"]'
+          ];
+          
+          elementsToHide.forEach(function(selector) {
+            var elements = document.querySelectorAll(selector);
+            elements.forEach(function(el) {
+              // Don't hide leaflet map controls
+              if (!el.classList.contains('leaflet-control') && 
+                  !el.closest('.leaflet-control') &&
+                  el.id !== 'map') {
+                el.style.display = 'none';
+              }
+            });
+          });
+          
+          // Hide all divs that are positioned absolutely (except map and leaflet)
+          var allDivs = document.querySelectorAll('div');
+          allDivs.forEach(function(div) {
+            var style = window.getComputedStyle(div);
+            if (style.position === 'absolute' && 
+                div.id !== 'map' && 
+                !div.classList.contains('leaflet-control') &&
+                !div.closest('.leaflet-control') &&
+                !div.closest('#map')) {
+              div.style.display = 'none';
+            }
+          });
+          
+          // Make map full screen
+          var mapEl = document.getElementById('map');
+          if (mapEl) {
+            mapEl.style.position = 'fixed';
+            mapEl.style.top = '0';
+            mapEl.style.left = '0';
+            mapEl.style.width = '100vw';
+            mapEl.style.height = '100vh';
+            mapEl.style.zIndex = '1';
+          }
+          
+          // Clean up body
+          document.body.style.margin = '0';
+          document.body.style.padding = '0';
+          document.body.style.overflow = 'hidden';
+        }, 500);
+      })();
+      true;
+    `;
+    
+    webviewRef.current?.injectJavaScript(jsCode);
   };
 
   if (loading) {
@@ -90,7 +156,7 @@ const MapScreen = () => {
 
   return (
     <View style={s.container}>
-      {/* Full Screen Map */}
+      {/* Full Screen Map - Web UI Hidden */}
       <WebView
         ref={webviewRef}
         source={{uri: 'http://10.0.2.2:8000/map'}}
@@ -98,6 +164,7 @@ const MapScreen = () => {
         javaScriptEnabled={true}
         domStorageEnabled={true}
         startInLoadingState={true}
+        onLoadEnd={hideWebUI} // CHANGED: Run after page loads
         renderLoading={() => (
           <View style={s.center}>
             <ActivityIndicator size="large" color="#1565C0" />
@@ -114,14 +181,8 @@ const MapScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Floating Action Buttons */}
+      {/* Floating Action Buttons - CHANGED: Only 2 buttons */}
       <View style={s.fabContainer}>
-        <TouchableOpacity
-          style={[s.fab, activeModal === 'stats' && s.fabActive]}
-          onPress={() => openModal('stats')}>
-          <Text style={s.fabIcon}>📊</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[s.fab, activeModal === 'list' && s.fabActive]}
           onPress={() => openModal('list')}>
@@ -154,7 +215,6 @@ const MapScreen = () => {
               <View style={s.modalHeader}>
                 <View style={s.modalHandle} />
                 <Text style={s.modalTitle}>
-                  {activeModal === 'stats' && '📊 Statistics'}
                   {activeModal === 'list' && '📋 Bus List'}
                   {activeModal === 'eticket' && '🎫 E-Ticket'}
                 </Text>
@@ -165,76 +225,50 @@ const MapScreen = () => {
 
               {/* Modal Body */}
               <ScrollView style={s.modalBody}>
-                {/* Stats Modal */}
-                {activeModal === 'stats' && (
-                  <View>
-                    <View style={s.statsGrid}>
-                      <View style={s.statCard}>
-                        <Text style={s.statCardNum}>{buses.length}</Text>
-                        <Text style={s.statCardLbl}>Active Buses</Text>
-                      </View>
-                      <View style={s.statCard}>
-                        <Text style={s.statCardNum}>{routes}</Text>
-                        <Text style={s.statCardLbl}>Routes</Text>
-                      </View>
-                    </View>
-                    <View style={s.statsGrid}>
-                      <View style={s.statCard}>
-                        <Text style={[s.statCardNum, {color: '#4CAF50'}]}>
-                          {fwd}
-                        </Text>
-                        <Text style={s.statCardLbl}>▶ Forward</Text>
-                      </View>
-                      <View style={s.statCard}>
-                        <Text style={[s.statCardNum, {color: '#F44336'}]}>
-                          {rev}
-                        </Text>
-                        <Text style={s.statCardLbl}>◀ Reverse</Text>
-                      </View>
-                    </View>
-                    <View style={s.infoBox}>
-                      <Text style={s.infoText}>
-                        Last Updated: {lastUpdate}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Bus List Modal */}
+                {/* Bus List Modal - CHANGED: Now shows content */}
                 {activeModal === 'list' && (
                   <View>
-                    {buses.map((bus, i) => (
-                      <View key={bus.bus_id || i} style={s.card}>
-                        <View style={s.cardHead}>
-                          <Text style={s.cardId}>{bus.bus_id}</Text>
-                          <View
-                            style={[
-                              s.badge,
-                              bus.bus_id?.includes('-F-')
-                                ? s.fBadge
-                                : s.rBadge,
-                            ]}>
-                            <Text style={s.badgeTxt}>
-                              {bus.bus_id?.includes('-F-') ? '▶ FWD' : '◀ REV'}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={s.cardRoute}>Route: {bus.route_id}</Text>
-                        {bus.speed != null && (
-                          <Text style={s.cardSpeed}>
-                            ⚡ {Number(bus.speed).toFixed(1)} km/h
-                          </Text>
-                        )}
-                        <Text style={s.cardCoord}>
-                          📍 {bus.current_lat?.toFixed(4)},{' '}
-                          {bus.current_lng?.toFixed(4)}
+                    {buses.length === 0 ? (
+                      <View style={s.emptyState}>
+                        <Text style={s.emptyText}>No active buses</Text>
+                        <Text style={s.emptySubtext}>
+                          Activate buses from web admin panel
                         </Text>
                       </View>
-                    ))}
+                    ) : (
+                      buses.map((bus, i) => (
+                        <View key={bus.bus_id || i} style={s.card}>
+                          <View style={s.cardHead}>
+                            <Text style={s.cardId}>{bus.bus_id}</Text>
+                            <View
+                              style={[
+                                s.badge,
+                                bus.bus_id?.includes('-F-')
+                                  ? s.fBadge
+                                  : s.rBadge,
+                              ]}>
+                              <Text style={s.badgeTxt}>
+                                {bus.bus_id?.includes('-F-') ? '▶ FWD' : '◀ REV'}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={s.cardRoute}>Route: {bus.route_id}</Text>
+                          {bus.speed != null && (
+                            <Text style={s.cardSpeed}>
+                              ⚡ {Number(bus.speed).toFixed(1)} km/h
+                            </Text>
+                          )}
+                          <Text style={s.cardCoord}>
+                            📍 {bus.current_lat?.toFixed(4)},{' '}
+                            {bus.current_lng?.toFixed(4)}
+                          </Text>
+                        </View>
+                      ))
+                    )}
                   </View>
                 )}
 
-                {/* E-Ticket Modal */}
+                {/* E-Ticket Modal - CHANGED: Now shows content */}
                 {activeModal === 'eticket' && (
                   <View style={s.eticketContainer}>
                     <Text style={s.eticketTitle}>
@@ -246,6 +280,14 @@ const MapScreen = () => {
                     <Text style={s.eticketInfo}>
                       🎉 Senior citizens (60+) travel FREE!
                     </Text>
+                    <View style={s.infoBox}>
+                      <Text style={s.infoText}>
+                        💳 Top-up available via EasyPaisa, JazzCash, NayaPay, SadaPay
+                      </Text>
+                      <Text style={s.infoText}>
+                        💰 Fare: Rs. 10/km (Minimum Rs. 20)
+                      </Text>
+                    </View>
                   </View>
                 )}
               </ScrollView>
@@ -376,37 +418,22 @@ const s = StyleSheet.create({
     padding: 16,
   },
 
-  // Stats Modal
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-    padding: 20,
-    borderRadius: 12,
+  // Empty State
+  emptyState: {
     alignItems: 'center',
-    elevation: 2,
+    paddingVertical: 48,
   },
-  statCardNum: {
-    fontSize: 32,
+  emptyText: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#1565C0',
+    color: '#999',
+    marginBottom: 8,
   },
-  statCardLbl: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+  emptySubtext: {
+    fontSize: 14,
+    color: '#bbb',
+    textAlign: 'center',
   },
-  infoBox: {
-    backgroundColor: '#E3F2FD',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  infoText: {fontSize: 14, color: '#1565C0', textAlign: 'center'},
 
   // Bus List
   card: {
@@ -461,6 +488,19 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  infoBox: {
+    backgroundColor: '#E3F2FD',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 8,
+    width: '100%',
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#1565C0',
+    marginBottom: 4,
   },
 });
 
