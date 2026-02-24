@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Dimensions,
   ScrollView,
-  Animated,
 } from 'react-native';
 import WebView from 'react-native-webview';
 
@@ -28,17 +27,17 @@ const MapScreen = () => {
   const [lastUpdate, setLastUpdate] = useState('');
   const [activeModal, setActiveModal] = useState<'list' | 'eticket' | null>(null);
   const webviewRef = useRef<any>(null);
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
   const fetchBuses = async () => {
     try {
       const r = await fetch('http://10.0.2.2:8000/api/buses');
       const data = await r.json();
       const arr = Array.isArray(data) ? data : data.buses || [];
+      console.log('✅ Fetched buses:', arr.length);
       setBuses(arr);
       setLastUpdate(new Date().toLocaleTimeString());
     } catch (e) {
-      console.error(e);
+      console.error('❌ Fetch error:', e);
     } finally {
       setLoading(false);
     }
@@ -50,23 +49,6 @@ const MapScreen = () => {
     return () => clearInterval(iv);
   }, []);
 
-  useEffect(() => {
-    if (activeModal !== null) {
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 8,
-      }).start();
-    } else {
-      Animated.timing(slideAnim, {
-        toValue: SCREEN_HEIGHT,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [activeModal]);
-
   const openModal = (type: 'list' | 'eticket') => {
     setActiveModal(type);
   };
@@ -75,13 +57,10 @@ const MapScreen = () => {
     setActiveModal(null);
   };
 
-  // CHANGED: Function to hide web UI - runs after page loads
   const hideWebUI = () => {
     const jsCode = `
       (function() {
-        // Wait for DOM to be ready
         setTimeout(function() {
-          // Hide all UI containers including Enhanced Map Controls
           var elementsToHide = [
             '.header',
             '.department-info', 
@@ -90,17 +69,12 @@ const MapScreen = () => {
             '.eticket-button',
             'button:not(.leaflet-control button)',
             '.leaflet-top.leaflet-right > div:not(.leaflet-control-zoom)',
-            'div[style*="position: absolute"]:not(#map):not([id*="leaflet"])',
-            'div:has(> h3)',
-            'div:has(> button)',
-            '[class*="enhanced"]',
-            '[class*="control"]'
+            'div[style*="position: absolute"]:not(#map):not([id*="leaflet"])'
           ];
           
           elementsToHide.forEach(function(selector) {
             var elements = document.querySelectorAll(selector);
             elements.forEach(function(el) {
-              // Don't hide leaflet map controls
               if (!el.classList.contains('leaflet-control') && 
                   !el.closest('.leaflet-control') &&
                   el.id !== 'map') {
@@ -109,7 +83,6 @@ const MapScreen = () => {
             });
           });
           
-          // Hide all divs that are positioned absolutely (except map and leaflet)
           var allDivs = document.querySelectorAll('div');
           allDivs.forEach(function(div) {
             var style = window.getComputedStyle(div);
@@ -122,7 +95,6 @@ const MapScreen = () => {
             }
           });
           
-          // Make map full screen
           var mapEl = document.getElementById('map');
           if (mapEl) {
             mapEl.style.position = 'fixed';
@@ -133,10 +105,13 @@ const MapScreen = () => {
             mapEl.style.zIndex = '1';
           }
           
-          // Clean up body
           document.body.style.margin = '0';
           document.body.style.padding = '0';
           document.body.style.overflow = 'hidden';
+          
+          if (window.map && window.map.invalidateSize) {
+            window.map.invalidateSize();
+          }
         }, 500);
       })();
       true;
@@ -156,15 +131,24 @@ const MapScreen = () => {
 
   return (
     <View style={s.container}>
-      {/* Full Screen Map - Web UI Hidden */}
       <WebView
         ref={webviewRef}
         source={{uri: 'http://10.0.2.2:8000/map'}}
-        style={s.webview}
+        style={{flex: 1, backgroundColor: '#e0e0e0'}}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         startInLoadingState={true}
-        onLoadEnd={hideWebUI} // CHANGED: Run after page loads
+        onLoadEnd={hideWebUI}
+        onLoad={() => {
+          setTimeout(() => {
+            webviewRef.current?.injectJavaScript(`
+              if (window.map && window.map.invalidateSize) {
+                window.map.invalidateSize();
+              }
+              true;
+            `);
+          }, 1000);
+        }}
         renderLoading={() => (
           <View style={s.center}>
             <ActivityIndicator size="large" color="#1565C0" />
@@ -173,7 +157,6 @@ const MapScreen = () => {
         )}
       />
 
-      {/* Compact Header Bar */}
       <View style={s.topBar}>
         <Text style={s.topTitle}>🚌 Metro Live</Text>
         <TouchableOpacity style={s.refreshBtn} onPress={fetchBuses}>
@@ -181,7 +164,6 @@ const MapScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Floating Action Buttons - CHANGED: Only 2 buttons */}
       <View style={s.fabContainer}>
         <TouchableOpacity
           style={[s.fab, activeModal === 'list' && s.fabActive]}
@@ -196,104 +178,118 @@ const MapScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Modal Container */}
       {activeModal !== null && (
-        <TouchableOpacity
-          style={s.modalOverlay}
-          activeOpacity={1}
-          onPress={closeModal}>
+        <View style={s.modalOverlay}>
           <TouchableOpacity
+            style={{flex: 1}}
             activeOpacity={1}
-            style={[s.modalContent]}
-            onPress={(e) => e.stopPropagation()}>
-            <Animated.View
-              style={[
-                s.modalContentInner,
-                {transform: [{translateY: slideAnim}]},
-              ]}>
-              {/* Modal Header */}
-              <View style={s.modalHeader}>
-                <View style={s.modalHandle} />
-                <Text style={s.modalTitle}>
-                  {activeModal === 'list' && '📋 Bus List'}
-                  {activeModal === 'eticket' && '🎫 E-Ticket'}
-                </Text>
-                <TouchableOpacity style={s.closeBtn} onPress={closeModal}>
-                  <Text style={s.closeTxt}>✕</Text>
-                </TouchableOpacity>
-              </View>
+            onPress={closeModal}
+          />
+          
+          <View style={s.modalContentInner}>
+            <View style={s.modalHeader}>
+              <View style={s.modalHandle} />
+              <Text style={s.modalTitle}>
+                {activeModal === 'list' && '📋 Bus List'}
+                {activeModal === 'eticket' && '🎫 E-Ticket'}
+              </Text>
+              <TouchableOpacity style={s.closeBtn} onPress={closeModal}>
+                <Text style={s.closeTxt}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-              {/* Modal Body */}
-              <ScrollView style={s.modalBody}>
-                {/* Bus List Modal - CHANGED: Now shows content */}
-                {activeModal === 'list' && (
-                  <View>
-                    {buses.length === 0 ? (
-                      <View style={s.emptyState}>
-                        <Text style={s.emptyText}>No active buses</Text>
-                        <Text style={s.emptySubtext}>
-                          Activate buses from web admin panel
-                        </Text>
-                      </View>
-                    ) : (
-                      buses.map((bus, i) => (
-                        <View key={bus.bus_id || i} style={s.card}>
-                          <View style={s.cardHead}>
-                            <Text style={s.cardId}>{bus.bus_id}</Text>
-                            <View
-                              style={[
-                                s.badge,
-                                bus.bus_id?.includes('-F-')
-                                  ? s.fBadge
-                                  : s.rBadge,
-                              ]}>
-                              <Text style={s.badgeTxt}>
-                                {bus.bus_id?.includes('-F-') ? '▶ FWD' : '◀ REV'}
-                              </Text>
-                            </View>
-                          </View>
-                          <Text style={s.cardRoute}>Route: {bus.route_id}</Text>
-                          {bus.speed != null && (
-                            <Text style={s.cardSpeed}>
-                              ⚡ {Number(bus.speed).toFixed(1)} km/h
-                            </Text>
-                          )}
-                          <Text style={s.cardCoord}>
-                            📍 {bus.current_lat?.toFixed(4)},{' '}
-                            {bus.current_lng?.toFixed(4)}
-                          </Text>
-                        </View>
-                      ))
-                    )}
+            <ScrollView 
+              style={s.modalBody}
+              contentContainerStyle={{paddingBottom: 20}}>
+              {activeModal === 'list' && (
+                <View>
+                  <View style={{
+                    backgroundColor: '#1565C0',
+                    padding: 12,
+                    borderRadius: 8,
+                    marginBottom: 12,
+                  }}>
+                    <Text style={{
+                      fontSize: 18,
+                      fontWeight: 'bold',
+                      color: '#fff',
+                      textAlign: 'center',
+                    }}>
+                      Active Buses: {buses.length}
+                    </Text>
+                    <Text style={{
+                      fontSize: 12,
+                      color: '#E3F2FD',
+                      textAlign: 'center',
+                      marginTop: 4,
+                    }}>
+                      Last Update: {lastUpdate}
+                    </Text>
                   </View>
-                )}
 
-                {/* E-Ticket Modal - CHANGED: Now shows content */}
-                {activeModal === 'eticket' && (
-                  <View style={s.eticketContainer}>
-                    <Text style={s.eticketTitle}>
-                      Purchase Metro Bus E-Ticket
-                    </Text>
-                    <TouchableOpacity style={s.eticketBtn}>
-                      <Text style={s.eticketBtnTxt}>Login / Sign Up</Text>
-                    </TouchableOpacity>
-                    <Text style={s.eticketInfo}>
-                      🎉 Senior citizens (60+) travel FREE!
-                    </Text>
-                    <View style={s.infoBox}>
-                      <Text style={s.infoText}>
-                        💳 Top-up available via EasyPaisa, JazzCash, NayaPay, SadaPay
-                      </Text>
-                      <Text style={s.infoText}>
-                        💰 Fare: Rs. 10/km (Minimum Rs. 20)
+                  {buses.length === 0 ? (
+                    <View style={s.emptyState}>
+                      <Text style={s.emptyText}>No active buses</Text>
+                      <Text style={s.emptySubtext}>
+                        Activate buses from web admin panel
                       </Text>
                     </View>
+                  ) : (
+                    buses.map((bus, i) => (
+                      <View key={i} style={s.card}>
+                        <View style={s.cardHead}>
+                          <Text style={s.cardId}>{bus.bus_id}</Text>
+                          <View
+                            style={[
+                              s.badge,
+                              bus.bus_id?.includes('-F-')
+                                ? s.fBadge
+                                : s.rBadge,
+                            ]}>
+                            <Text style={s.badgeTxt}>
+                              {bus.bus_id?.includes('-F-') ? '▶ FWD' : '◀ REV'}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={s.cardRoute}>Route: {bus.route_id}</Text>
+                        {bus.speed != null && (
+                          <Text style={s.cardSpeed}>
+                            ⚡ {Number(bus.speed).toFixed(1)} km/h
+                          </Text>
+                        )}
+                        <Text style={s.cardCoord}>
+                          📍 {bus.current_lat?.toFixed(4)}, {bus.current_lng?.toFixed(4)}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              {activeModal === 'eticket' && (
+                <View style={s.eticketContainer}>
+                  <Text style={s.eticketTitle}>
+                    Purchase Metro Bus E-Ticket
+                  </Text>
+                  <TouchableOpacity style={s.eticketBtn}>
+                    <Text style={s.eticketBtnTxt}>Login / Sign Up</Text>
+                  </TouchableOpacity>
+                  <Text style={s.eticketInfo}>
+                    🎉 Senior citizens (60+) travel FREE!
+                  </Text>
+                  <View style={s.infoBox}>
+                    <Text style={s.infoText}>
+                      💳 Top-up: EasyPaisa, JazzCash, NayaPay, SadaPay
+                    </Text>
+                    <Text style={s.infoText}>
+                      💰 Fare: Rs. 10/km (Min Rs. 20)
+                    </Text>
                   </View>
-                )}
-              </ScrollView>
-            </Animated.View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
       )}
     </View>
   );
@@ -303,9 +299,7 @@ const s = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#000'},
   center: {flex: 1, justifyContent: 'center', alignItems: 'center'},
   loadTxt: {marginTop: 10, fontSize: 16, color: '#666'},
-  webview: {flex: 1},
 
-  // Top Bar
   topBar: {
     position: 'absolute',
     top: 0,
@@ -331,7 +325,6 @@ const s = StyleSheet.create({
   },
   refreshTxt: {fontSize: 16},
 
-  // Floating Action Buttons
   fabContainer: {
     position: 'absolute',
     right: 16,
@@ -358,26 +351,21 @@ const s = StyleSheet.create({
   },
   fabIcon: {fontSize: 24},
 
-  // Modal
   modalOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     zIndex: 20,
     justifyContent: 'flex-end',
-  },
-  modalContent: {
-    width: '100%',
-    maxHeight: SCREEN_HEIGHT * 0.75,
   },
   modalContentInner: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: SCREEN_HEIGHT * 0.75,
+    height: SCREEN_HEIGHT * 0.7,
     elevation: 10,
   },
   modalHeader: {
@@ -418,7 +406,6 @@ const s = StyleSheet.create({
     padding: 16,
   },
 
-  // Empty State
   emptyState: {
     alignItems: 'center',
     paddingVertical: 48,
@@ -435,11 +422,10 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Bus List
   card: {
     backgroundColor: '#fff',
     marginBottom: 12,
-    padding: 12,
+    padding: 14,
     borderRadius: 10,
     elevation: 2,
     borderWidth: 1,
@@ -448,18 +434,17 @@ const s = StyleSheet.create({
   cardHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  cardId: {fontSize: 14, fontWeight: 'bold', color: '#222', flex: 1},
-  badge: {paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8},
+  cardId: {fontSize: 15, fontWeight: 'bold', color: '#000', flex: 1},
+  badge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8},
   fBadge: {backgroundColor: '#E8F5E9'},
   rBadge: {backgroundColor: '#FBE9E7'},
   badgeTxt: {fontSize: 11, fontWeight: 'bold', color: '#333'},
-  cardRoute: {fontSize: 12, color: '#2196F3', marginBottom: 2},
-  cardSpeed: {fontSize: 12, color: '#FF9800', marginBottom: 2},
+  cardRoute: {fontSize: 13, color: '#2196F3', marginBottom: 4},
+  cardSpeed: {fontSize: 13, color: '#FF9800', marginBottom: 4},
   cardCoord: {fontSize: 11, color: '#999'},
 
-  // E-Ticket
   eticketContainer: {
     alignItems: 'center',
     paddingVertical: 32,
@@ -494,7 +479,6 @@ const s = StyleSheet.create({
     backgroundColor: '#E3F2FD',
     padding: 16,
     borderRadius: 8,
-    marginTop: 8,
     width: '100%',
   },
   infoText: {
