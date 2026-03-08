@@ -65,6 +65,61 @@
       "balance": 0,
       "is_senior": false,
       "created_at": "2026-02-13T10:29:23.106912"
+    },
+    {
+      "id": 7,
+      "name": "Hafiz",
+      "email": "Hafiz@erw.com",
+      "phone": "03241702398",
+      "age": "20",
+      "password": "adahfahjfhakfa",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-27T05:00:17.069765"
+    },
+    {
+      "id": 8,
+      "name": "fdsa",
+      "email": "fdsa@fdsa.com",
+      "phone": "727276252",
+      "age": "20",
+      "password": "fdsa",
+      "balance": 7500,
+      "is_senior": false,
+      "created_at": "2026-02-27T07:01:55.243831"
+    },
+    {
+      "id": 9,
+      "name": "jkl",
+      "email": "jkl@jkl.com",
+      "phone": "234565432",
+      "age": "65",
+      "password": "jkl",
+      "balance": 200,
+      "is_senior": true,
+      "created_at": "2026-02-27T07:11:16.200443"
+    },
+    {
+      "id": 10,
+      "name": "Zain",
+      "email": "asdf@asdf.com",
+      "phone": "+92342728942",
+      "age": "61",
+      "password": "asdf",
+      "balance": 2000,
+      "is_senior": true,
+      "created_at": "2026-02-27T10:34:37.013008"
+    },
+    {
+      "id": 11,
+      "name": "op",
+      "email": "op@op.op",
+      "phone": "",
+      "age": 56,
+      "password": "opopop",
+      "balance": 1534,
+      "is_senior": false,
+      "created_at": "2026-03-08T22:35:21.090839"
     }
   ]
 }

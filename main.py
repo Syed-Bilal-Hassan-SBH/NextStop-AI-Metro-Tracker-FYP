@@ -3,6 +3,7 @@
 import asyncio
 import uvicorn
 import os
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -12,7 +13,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-
 
 # Import our custom modules
 try:
@@ -1140,7 +1140,7 @@ async def deactivate_all_routes():
 async def eticket_login(request: dict):
     """Login user"""
     try:
-        with open(ETICKET_USERS_FILE, 'r') as f:
+        with open("eticket_users.json", 'r') as f:
             data = json.load(f)
         
         # Find user
@@ -1204,7 +1204,7 @@ async def get_active_routes_for_ticket():
 async def eticket_topup(request: dict):
     """Top up user wallet"""
     try:
-        with open(ETICKET_USERS_FILE, 'r') as f:
+        with open("eticket_users.json", 'r') as f:
             data = json.load(f)
         
         # Find user
@@ -1217,7 +1217,7 @@ async def eticket_topup(request: dict):
         user['balance'] += int(request['amount'])
         
         # Save to file
-        with open(ETICKET_USERS_FILE, 'w') as f:
+        with open("eticket_users.json", 'w') as f:
             json.dump(data, f, indent=2)
         
         return {
@@ -1233,7 +1233,7 @@ async def eticket_topup(request: dict):
 async def eticket_purchase(request: dict):
     """Purchase E-Ticket"""
     try:
-        with open(ETICKET_USERS_FILE, 'r') as f:
+        with open("eticket_users.json", 'r') as f:
             data = json.load(f)
         
         # Find user
@@ -1257,7 +1257,7 @@ async def eticket_purchase(request: dict):
             user['balance'] -= fare
             
             # Save to file
-            with open(ETICKET_USERS_FILE, 'w') as f:
+            with open("eticket_users.json", 'w') as f:
                 json.dump(data, f, indent=2)
         
         return {
