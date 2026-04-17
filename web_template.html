@@ -1214,6 +1214,11 @@
                         <option value="2" selected>Max 2 transfers</option>
                         <option value="3">Max 3 transfers</option>
                     </select>
+                    <select id="journey-preference-select" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="time">Time Efficient</option>
+                        <option value="money">Money Efficient</option>
+                        <option value="hybrid" selected>Hybrid</option>
+                    </select>
                     <button class="btn btn-activate" onclick="planJourneyUnified()" disabled id="plan-journey-btn">
                         <i class="fas fa-search"></i> Find Routes
                     </button>
@@ -1442,7 +1447,8 @@
             }
 
             const planBtn = document.getElementById('plan-journey-btn');
-            const maxTransfers = document.getElementById('max-transfers-select').value;
+            const maxTransfers = parseInt(document.getElementById('max-transfers-select').value, 10);
+            const preference = document.getElementById('journey-preference-select').value;
 
             // Show loading state
             planBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Planning...';
@@ -1508,67 +1514,51 @@
             }
 
             resultsSection.innerHTML = `
-                <h3><i class="fas fa-list"></i> Journey Options (${result.journeys.length})</h3>
-                <div id="journey-options-list" style="max-height: 400px; overflow-y: auto;">
+                <h3><i class="fas fa-list"></i> Journey Options (Top ${result.journeys.length})</h3>
+                ${result.planning_mode === 'location_to_location' && result.journeys[0]?.nearest_stops ? `
+                    <div style="font-size:0.82rem; margin-bottom:10px; padding:8px; background:#f8f9fa; border-radius:8px;">
+                        <div><strong>Nearest Origin Stop:</strong> ${result.journeys[0].nearest_stops.origin.stop_name || 'N/A'}
+                        (${result.journeys[0].nearest_stops.origin.walking_distance_km} km, ${Math.round(result.journeys[0].nearest_stops.origin.walking_time_minutes)} min walk)</div>
+                        <div><strong>Nearest Destination Stop:</strong> ${result.journeys[0].nearest_stops.destination.stop_name || 'N/A'}
+                        (${result.journeys[0].nearest_stops.destination.walking_distance_km} km, ${Math.round(result.journeys[0].nearest_stops.destination.walking_time_minutes)} min walk)</div>
+                    </div>
+                ` : ''}
+                <div id="journey-options-list" style="max-height: 460px; overflow-y: auto;">
                     ${result.journeys.map((journey, index) => `
-                        <div class="journey-option ${index === 0 ? 'recommended' : ''}" 
-                             onclick="selectJourneyOption(${index})"
-                             style="
-                                border: 2px solid ${index === 0 ? '#28a745' : '#e0e0e0'};
-                                border-radius: 8px;
-                                padding: 12px;
-                                margin: 8px 0;
-                                cursor: pointer;
-                                background: ${index === 0 ? 'rgba(40, 167, 69, 0.1)' : 'white'};
-                                transition: all 0.3s ease;
-                             ">
-                            
-                            ${index === 0 ? '<div style="color: #28a745; font-weight: bold; font-size: 0.8rem; margin-bottom: 6px;"><i class="fas fa-star"></i> RECOMMENDED</div>' : ''}
-                            
-                            <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 8px;">
-                                <div style="font-weight: bold; color: #2c3e50;">
-                                    ${Math.round(journey.summary.total_duration_minutes)} min journey
+                        <details class="journey-option ${index === 0 ? 'recommended' : ''}" ${index === 0 ? 'open' : ''}>
+                            <summary onclick="selectJourneyOption(${index})" style="list-style:none; cursor:pointer;">
+                                ${index === 0 ? '<div style="color:#28a745; font-weight:bold; font-size:0.78rem; margin-bottom:5px;"><i class="fas fa-star"></i> BEST MATCH</div>' : ''}
+                                <div style="display:flex; justify-content:space-between; gap:8px;">
+                                    <div>
+                                        <div style="font-weight:700;">${journey.route_names.join(' → ')}</div>
+                                        <div style="font-size:0.82rem; color:#6c757d;">
+                                            ${journey.summary.transfers_required} transfer(s) • ${journey.summary.total_distance_km} km
+                                        </div>
+                                    </div>
+                                    <div style="text-align:right; font-size:0.85rem;">
+                                        <div><strong>Rs ${journey.summary.total_fare_rs}</strong></div>
+                                        <div>${Math.round(journey.summary.estimated_total_time_minutes)} min</div>
+                                    </div>
                                 </div>
-                                <div style="font-size: 0.8rem; color: #6c757d;">
-                                    ${journey.summary.transfers_required} transfers • ${journey.summary.total_fare}
-                                </div>
-                            </div>
-                            
-                            <div style="display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;">
-                                ${journey.segments.map(seg => `
-                                    <span style="
-                                        background: ${seg.route_color};
-                                        color: white;
-                                        padding: 2px 6px;
-                                        border-radius: 10px;
-                                        font-size: 0.7rem;
-                                        font-weight: bold;
-                                    ">${seg.route_id}</span>
+                            </summary>
+                            <div style="margin-top:10px; font-size:0.84rem;">
+                                ${journey.segments.map((seg, sidx) => `
+                                    <div style="padding:8px; border:1px solid #eee; border-radius:6px; margin-bottom:6px;">
+                                        <strong>Leg ${sidx + 1}:</strong> ${seg.route_name} (${seg.route_id})<br>
+                                        ${seg.board_stop} → ${seg.alight_stop}<br>
+                                        Distance: ${seg.distance_km} km • Fare: Rs ${seg.fare_rs} • Time: ~${Math.round(seg.travel_min)} min
+                                    </div>
                                 `).join('')}
-                            </div>
-                            
-                            <div style="font-size: 0.8rem; color: #495057;">
-                                <div><i class="fas fa-clock"></i> ${journey.summary.departure_time.split('T')[1].substring(0, 5)} - ${journey.summary.arrival_time.split('T')[1].substring(0, 5)}</div>
-                                <div><i class="fas fa-walking"></i> ${Math.round(journey.summary.total_duration_minutes - journey.segments.reduce((sum, seg) => sum + seg.travel_time_minutes, 0))} min walking</div>
-                                <div><i class="fas fa-leaf"></i> ${journey.summary.carbon_footprint_kg} kg CO₂</div>
-                            </div>
-                            
-                            <div style="margin-top: 6px;">
-                                <div style="background: #e9ecef; border-radius: 10px; height: 4px; overflow: hidden;">
-                                    <div style="
-                                        background: linear-gradient(90deg, #28a745 0%, #ffc107 50%, #dc3545 100%);
-                                        width: ${journey.summary.confidence_score * 100}%;
-                                        height: 100%;
-                                    "></div>
-                                </div>
-                                <div style="font-size: 0.7rem; color: #6c757d; text-align: right; margin-top: 2px;">
-                                    ${Math.round(journey.summary.confidence_score * 100)}% confidence
+                                <div style="margin-top:8px;">
+                                    <strong>Step-by-step:</strong>
+                                    <ol style="margin:6px 0 0 18px;">
+                                        ${journey.instructions.map(step => `<li style="margin-bottom:4px;">${step.instruction}</li>`).join('')}
+                                    </ol>
                                 </div>
                             </div>
-                        </div>
+                        </details>
                     `).join('')}
                 </div>
-                
                 <div style="margin-top: 12px; text-align: center;">
                     <button class="btn btn-activate" onclick="clearJourneyResults()" style="font-size: 0.8rem;">
                         <i class="fas fa-times"></i> Clear Results
@@ -1636,13 +1626,45 @@
                 }
             });
 
-            // Show detailed journey information
-            showDetailedJourneyModal(journey);
-
             // Visualize this journey on map
             visualizeJourneyOnMap(journey);
 
             showToast(`Selected journey option ${index + 1}`, 'info');
+        }
+
+        function getJourneySegmentCoordinates(segment) {
+            const fallback = [
+                [segment.board_location[0], segment.board_location[1]],
+                [segment.alight_location[0], segment.alight_location[1]]
+            ];
+
+            if (!currentData || !currentData.routes || !currentData.routes[segment.route_id]) {
+                return fallback;
+            }
+
+            const routeData = currentData.routes[segment.route_id];
+            if (!routeData || !Array.isArray(routeData.stops) || routeData.stops.length === 0) {
+                return fallback;
+            }
+
+            const normalize = (v) => String(v || '').trim().toLowerCase();
+            const boardName = normalize(segment.board_stop);
+            const alightName = normalize(segment.alight_stop);
+
+            const boardIdx = routeData.stops.findIndex(s => normalize(s.name) === boardName);
+            const alightIdx = routeData.stops.findIndex(s => normalize(s.name) === alightName);
+            if (boardIdx < 0 || alightIdx < 0 || boardIdx === alightIdx) {
+                return fallback;
+            }
+
+            const start = Math.min(boardIdx, alightIdx);
+            const end = Math.max(boardIdx, alightIdx);
+            const sliced = routeData.stops.slice(start, end + 1).map(s => [s.latitude, s.longitude]);
+            if (boardIdx > alightIdx) {
+                sliced.reverse();
+            }
+
+            return sliced.length >= 2 ? sliced : fallback;
         }
 
         function visualizeJourneyOnMap(journey) {
@@ -1650,84 +1672,58 @@
             journeyPolylines.forEach(polyline => map.removeLayer(polyline));
             journeyPolylines = [];
 
+            const journeyLegColors = ['#ff006e', '#3a86ff', '#8338ec', '#fb5607', '#2ec4b6'];
+
             // Draw journey segments
             journey.segments.forEach((segment, index) => {
-                const coords = [
-                    [segment.boarding_stop.location[0], segment.boarding_stop.location[1]],
-                    [segment.alighting_stop.location[0], segment.alighting_stop.location[1]]
-                ];
+                const legColor = journeyLegColors[index % journeyLegColors.length];
+                const coords = getJourneySegmentCoordinates(segment);
 
                 const polyline = L.polyline(coords, {
-                    color: segment.route_color,
-                    weight: 6,
-                    opacity: 0.8,
-                    dashArray: index > 0 ? '10, 10' : null // Dash subsequent segments
+                    color: legColor,
+                    weight: 8,
+                    opacity: 0.95,
+                    dashArray: index > 0 ? '8, 8' : null
                 }).bindPopup(`
                     <div style="text-align: center; min-width: 200px;">
-                        <h4 style="color: ${segment.route_color}; margin-bottom: 8px;">
+                        <h4 style="color: ${legColor}; margin-bottom: 8px;">
                             Segment ${index + 1}: ${segment.route_name}
                         </h4>
                         <div style="font-size: 0.9rem;">
                             <div><strong>Route:</strong> ${segment.route_id} (${segment.direction})</div>
-                            <div><strong>From:</strong> ${segment.boarding_stop.name}</div>
-                            <div><strong>To:</strong> ${segment.alighting_stop.name}</div>
-                            <div><strong>Duration:</strong> ${segment.travel_time_minutes} minutes</div>
-                            <div><strong>Departure:</strong> ${segment.departure_time.split('T')[1].substring(0, 5)}</div>
-                            <div><strong>Arrival:</strong> ${segment.arrival_time.split('T')[1].substring(0, 5)}</div>
-                            <div><strong>Fare:</strong> ${segment.fare_cost}</div>
+                            <div><strong>From:</strong> ${segment.board_stop}</div>
+                            <div><strong>To:</strong> ${segment.alight_stop}</div>
+                            <div><strong>Duration:</strong> ${Math.round(segment.travel_min)} minutes</div>
+                            <div><strong>Fare:</strong> Rs ${segment.fare_rs}</div>
                         </div>
                     </div>
                 `).addTo(map);
 
                 journeyPolylines.push(polyline);
-            });
 
-            // Add transfer point markers
-            journey.transfer_points.forEach((transfer, index) => {
-                const transferIcon = L.divIcon({
-                    html: `<div style="
-                        background: #ffc107;
-                        color: #000;
-                        border-radius: 50%;
-                        width: 24px;
-                        height: 24px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-weight: bold;
-                        font-size: 12px;
-                        border: 2px solid white;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                    ">${index + 1}</div>`,
-                    iconSize: [24, 24],
-                    className: 'journey-transfer-marker'
-                });
+                const boardMarker = L.circleMarker([segment.board_location[0], segment.board_location[1]], {
+                    radius: 6,
+                    color: '#ffffff',
+                    weight: 2,
+                    fillColor: legColor,
+                    fillOpacity: 1.0
+                }).bindPopup(`<strong>Board:</strong> ${segment.board_stop}<br><strong>Route:</strong> ${segment.route_id}`).addTo(map);
+                journeyPolylines.push(boardMarker);
 
-                const transferMarker = L.marker(transfer.location, { icon: transferIcon })
-                    .bindPopup(`
-                        <div style="text-align: center;">
-                            <h4 style="color: #ffc107; margin-bottom: 8px;">
-                                <i class="fas fa-exchange-alt"></i> Transfer Point ${index + 1}
-                            </h4>
-                            <div style="font-size: 0.9rem;">
-                                <div><strong>From:</strong> ${transfer.from_route}</div>
-                                <div><strong>To:</strong> ${transfer.to_route}</div>
-                                <div><strong>Transfer Time:</strong> ${transfer.transfer_time_minutes} min</div>
-                                <div style="margin-top: 8px; color: #6c757d;">
-                                    ${transfer.transfer_instructions}
-                                </div>
-                            </div>
-                        </div>
-                    `)
-                    .addTo(map);
-
-                journeyPolylines.push(transferMarker);
+                const alightMarker = L.circleMarker([segment.alight_location[0], segment.alight_location[1]], {
+                    radius: 6,
+                    color: '#ffffff',
+                    weight: 2,
+                    fillColor: legColor,
+                    fillOpacity: 1.0
+                }).bindPopup(`<strong>Alight:</strong> ${segment.alight_stop}<br><strong>Route:</strong> ${segment.route_id}`).addTo(map);
+                journeyPolylines.push(alightMarker);
             });
 
             // Fit map to show entire journey
             const allCoords = journey.segments.flatMap(seg => [
-                [seg.boarding_stop.location[0], seg.boarding_stop.location[1]],
-                [seg.alighting_stop.location[0], seg.alighting_stop.location[1]]
+                [seg.board_location[0], seg.board_location[1]],
+                [seg.alight_location[0], seg.alight_location[1]]
             ]);
 
             if (allCoords.length > 0) {
@@ -2063,11 +2059,10 @@
             let textContent = `METRO BUS JOURNEY INSTRUCTIONS\n`;
             textContent += `================================\n\n`;
             textContent += `Journey ID: ${journey.journey_id}\n`;
-            textContent += `Total Duration: ${journey.summary.total_duration_minutes} minutes\n`;
-            textContent += `Total Fare: ${journey.summary.total_fare}\n`;
+            textContent += `Total Duration: ${journey.summary.estimated_total_time_minutes} minutes\n`;
+            textContent += `Total Fare: Rs ${journey.summary.total_fare_rs}\n`;
             textContent += `Transfers: ${journey.summary.transfers_required}\n`;
-            textContent += `Departure: ${journey.summary.departure_time.split('T')[1].substring(0, 5)}\n`;
-            textContent += `Arrival: ${journey.summary.arrival_time.split('T')[1].substring(0, 5)}\n\n`;
+            textContent += `Distance: ${journey.summary.total_distance_km} km\n\n`;
 
             textContent += `STEP-BY-STEP INSTRUCTIONS:\n`;
             textContent += `=========================\n\n`;
@@ -2088,12 +2083,11 @@
 
             journey.segments.forEach((segment, index) => {
                 textContent += `Segment ${index + 1}: ${segment.route_id} - ${segment.route_name}\n`;
-                textContent += `From: ${segment.boarding_stop.name}\n`;
-                textContent += `To: ${segment.alighting_stop.name}\n`;
-                textContent += `Departure: ${segment.departure_time.split('T')[1].substring(0, 5)}\n`;
-                textContent += `Arrival: ${segment.arrival_time.split('T')[1].substring(0, 5)}\n`;
-                textContent += `Duration: ${segment.travel_time_minutes} minutes\n`;
-                textContent += `Fare: ${segment.fare_cost}\n\n`;
+                textContent += `From: ${segment.board_stop}\n`;
+                textContent += `To: ${segment.alight_stop}\n`;
+                textContent += `Duration: ${Math.round(segment.travel_min)} minutes\n`;
+                textContent += `Distance: ${segment.distance_km} km\n`;
+                textContent += `Fare: Rs ${segment.fare_rs}\n\n`;
             });
 
             // Create and download file
@@ -3951,30 +3945,39 @@
             }
 
             const planBtn = document.getElementById('plan-journey-btn');
-            const maxTransfers = document.getElementById('max-transfers-select').value;
+            const maxTransfers = parseInt(document.getElementById('max-transfers-select').value, 10);
+            const preferenceSelect = document.getElementById('journey-preference-select');
+            const preference = preferenceSelect ? preferenceSelect.value : 'hybrid';
 
             planBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Planning...';
             planBtn.disabled = true;
 
             try {
+                const payload = {
+                    max_transfers: maxTransfers,
+                    preference: preference
+                };
+
+                if (plannerMode === 'stops') {
+                    const originSelect = document.getElementById('origin-stop-select');
+                    const destSelect = document.getElementById('destination-stop-select');
+                    const originStop = allAvailableStops.find(s => s.key === originSelect.value);
+                    const destStop = allAvailableStops.find(s => s.key === destSelect.value);
+                    payload.origin_stop = originStop ? originStop.name : null;
+                    payload.destination_stop = destStop ? destStop.name : null;
+                } else {
+                    payload.origin_lat = originLat;
+                    payload.origin_lng = originLng;
+                    payload.destination_lat = destLat;
+                    payload.destination_lng = destLng;
+                }
+
                 const response = await fetch('/api/journey/plan', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        origin_lat: originLat,
-                        origin_lng: originLng,
-                        destination_lat: destLat,
-                        destination_lng: destLng,
-                        preferences: {
-                            time_weight: 0.4,
-                            transfer_weight: 0.3,
-                            walking_weight: 0.2,
-                            cost_weight: 0.1,
-                            allow_multiple_transfers: parseInt(maxTransfers) > 0
-                        }
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 const result = await response.json();

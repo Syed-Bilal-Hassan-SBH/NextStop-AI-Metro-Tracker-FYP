@@ -4,6 +4,7 @@ import asyncio
 import uvicorn
 import os
 import json
+import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -81,12 +82,22 @@ class ETARequest(BaseModel):
 
 # NEW: Journey Planning Request models - ADDED
 class JourneyPlanRequest(BaseModel):
-    origin_lat: float = Field(..., description="Origin latitude")
-    origin_lng: float = Field(..., description="Origin longitude")
-    destination_lat: float = Field(..., description="Destination latitude")
-    destination_lng: float = Field(..., description="Destination longitude")
+    origin_lat: Optional[float] = Field(None, description="Origin latitude")
+    origin_lng: Optional[float] = Field(None, description="Origin longitude")
+    destination_lat: Optional[float] = Field(None, description="Destination latitude")
+    destination_lng: Optional[float] = Field(None, description="Destination longitude")
+    origin_stop: Optional[str] = Field(None, description="Origin stop name")
+    destination_stop: Optional[str] = Field(None, description="Destination stop name")
     departure_time: Optional[str] = Field(None, description="Departure time in ISO format")
     preferences: Optional[Dict[str, Any]] = Field(default_factory=dict, description="User preferences")
+    max_transfers: Optional[int] = Field(2, description="Max bus transfers (0=direct, 1, 2, 3)")
+    preference: Optional[str] = Field("hybrid", description="Optimise for: time | money | hybrid")
+
+class JourneyStopRequest(BaseModel):
+    origin_stop: str = Field(..., description="Origin stop name")
+    destination_stop: str = Field(..., description="Destination stop name")
+    max_transfers: Optional[int] = Field(2, description="Max transfers")
+    preference: Optional[str] = Field("hybrid", description="time | money | hybrid")
 
 class JourneyUpdateRequest(BaseModel):
     journey_id: str = Field(..., description="Journey ID to get updates for")
@@ -100,6 +111,24 @@ driver_manager = None        # NEW
 rush_hour_manager = None     # NEW
 performance_manager = None   # NEW
 active_connections: List[WebSocket] = []
+DEBUG_LOG_PATH = "/home/muhammad/Desktop/FYP/.cursor/debug-a6bc00.log"
+
+
+def _agent_debug_log(location: str, message: str, data: Dict[str, Any], run_id: str, hypothesis_id: str):
+    try:
+        payload = {
+            "sessionId": "a6bc00",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(datetime.now().timestamp() * 1000)
+        }
+        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -241,8 +270,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (mobile apps)
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex="https?://.*",
+    allow_credentials=False,
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers
 )
@@ -593,84 +628,110 @@ async def get_bus_eta(bus_id: str):
 # NEW ENDPOINTS - Journey Planning (ADDED without replacing anything)
 @app.post("/api/journey/plan")
 async def plan_journey(request: JourneyPlanRequest):
-    """
-    Plan an optimal multi-route journey with intelligent transfers
-    """
     if not journey_planner:
-        if JOURNEY_PLANNING_AVAILABLE:
-            raise HTTPException(status_code=500, detail="Journey planner not initialized")
-        else:
-            raise HTTPException(status_code=503, detail="Journey planning not available - module not found")
-    
+        raise HTTPException(status_code=503, detail="Journey planning not available")
     try:
-        # Parse departure time if provided
-        departure_time = None
-        if request.departure_time:
-            try:
-                departure_time = datetime.fromisoformat(request.departure_time.replace('Z', '+00:00'))
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid departure time format. Use ISO format.")
-        
-        # Enhanced preferences with more lenient settings for stop-to-stop
-        enhanced_preferences = request.preferences or {}
-        enhanced_preferences.setdefault('time_weight', 0.4)
-        enhanced_preferences.setdefault('transfer_weight', 0.2)  # More lenient on transfers
-        enhanced_preferences.setdefault('walking_weight', 0.15)
-        enhanced_preferences.setdefault('cost_weight', 0.1)
-        enhanced_preferences.setdefault('confidence_weight', 0.1)
-        enhanced_preferences.setdefault('carbon_weight', 0.05)
-        enhanced_preferences.setdefault('allow_multiple_transfers', True)
-        
-        # Plan the journey
-        journey_options = await journey_planner.plan_journey(
-            origin_lat=request.origin_lat,
-            origin_lng=request.origin_lng,
-            dest_lat=request.destination_lat,
-            dest_lng=request.destination_lng,
-            departure_time=departure_time,
-            preferences=enhanced_preferences
+        _agent_debug_log(
+            location="main.py:/api/journey/plan:entry",
+            message="Journey planning request received",
+            data={
+                "has_origin_stop": bool(request.origin_stop),
+                "has_destination_stop": bool(request.destination_stop),
+                "has_origin_latlng": request.origin_lat is not None and request.origin_lng is not None,
+                "has_destination_latlng": request.destination_lat is not None and request.destination_lng is not None,
+                "preference": request.preference,
+                "max_transfers": request.max_transfers
+            },
+            run_id="run1",
+            hypothesis_id="H2"
         )
-        
+        max_transfers = request.max_transfers or 2
+        preference = (request.preference or 'hybrid').lower()
+
+        if request.origin_stop and request.destination_stop:
+            journey_options = await journey_planner.plan_journey_by_stops(
+                origin_name=request.origin_stop,
+                dest_name=request.destination_stop,
+                max_transfers=max_transfers,
+                preference=preference,
+            )
+            planning_mode = "stop_to_stop"
+        else:
+            if None in (request.origin_lat, request.origin_lng, request.destination_lat, request.destination_lng):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Provide either origin_stop/destination_stop OR full origin/destination coordinates."
+                )
+            journey_options = await journey_planner.plan_journey(
+                origin_lat=request.origin_lat,
+                origin_lng=request.origin_lng,
+                dest_lat=request.destination_lat,
+                dest_lng=request.destination_lng,
+                max_transfers=max_transfers,
+                preference=preference,
+            )
+            planning_mode = "location_to_location"
         if not journey_options:
-            return {
-                "success": False,
-                "message": "No viable journey routes found",
-                "suggestions": [
-                    "Try adjusting your departure time",
-                    "Consider walking to a nearby major stop",
-                    "Check if all routes are currently active"
-                ]
-            }
-        
-        # Convert journeys to API response format
-        journey_summaries = [
-            journey_planner.get_journey_summary(journey) 
-            for journey in journey_options
-        ]
-        
+            _agent_debug_log(
+                location="main.py:/api/journey/plan:no_results",
+                message="Journey planner returned no options",
+                data={"planning_mode": planning_mode},
+                run_id="run1",
+                hypothesis_id="H4"
+            )
+            return {"success": False, "message": "No viable journey routes found",
+                    "suggestions": ["Try different stops", "Increase max transfers",
+                                    "Check active routes"]}
+        summaries = [journey_planner.get_journey_summary(j) for j in journey_options]
+        _agent_debug_log(
+            location="main.py:/api/journey/plan:success",
+            message="Journey planner returned options",
+            data={"planning_mode": planning_mode, "journey_count": len(summaries)},
+            run_id="run1",
+            hypothesis_id="H2"
+        )
         return {
             "success": True,
-            "message": f"Found {len(journey_options)} optimal journey options",
-            "journey_count": len(journey_options),
-            "journeys": journey_summaries,
-            "search_parameters": {
-                "origin": {"lat": request.origin_lat, "lng": request.origin_lng},
-                "destination": {"lat": request.destination_lat, "lng": request.destination_lng},
-                "departure_time": request.departure_time,
-                "preferences": request.preferences
-            },
-            "system_info": {
-                "max_transfers": journey_planner.max_transfers,
-                "max_walking_distance_km": journey_planner.max_walking_distance_km,
-                "transfer_buffer_minutes": journey_planner.transfer_buffer_minutes,
-                "available_routes": len(simulator.routes) if simulator else 0,
-                "active_routes": len(simulator.active_routes) if simulator else 0
-            }
+            "planning_mode": planning_mode,
+            "journey_count": len(summaries),
+            "best": summaries[0],
+            "journeys": summaries
         }
-        
     except Exception as e:
-        print(f"Error planning journey: {e}")
-        raise HTTPException(status_code=500, detail=f"Journey planning failed: {str(e)}")
+        _agent_debug_log(
+            location="main.py:/api/journey/plan:exception",
+            message="Journey planning endpoint exception",
+            data={"error": str(e), "traceback": traceback.format_exc()},
+            run_id="run1",
+            hypothesis_id="H2"
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/journey/plan-by-stops")
+async def plan_journey_by_stops(request: JourneyStopRequest):
+    if not journey_planner:
+        raise HTTPException(status_code=503, detail="Journey planning not available")
+    try:
+        journey_options = await journey_planner.plan_journey_by_stops(
+            origin_name=request.origin_stop,
+            dest_name=request.destination_stop,
+            max_transfers=request.max_transfers or 2,
+            preference=request.preference or 'hybrid',
+        )
+        if not journey_options:
+            return {"success": False, "message": "No routes found between these stops",
+                    "suggestions": ["Check stop names are correct", "Try increasing max transfers"]}
+        summaries = [journey_planner.get_journey_summary(j) for j in journey_options]
+        return {
+            "success": True,
+            "planning_mode": "stop_to_stop",
+            "journey_count": len(summaries),
+            "best": summaries[0],
+            "journeys": summaries
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/journey/{journey_id}/updates")
 async def get_journey_updates(journey_id: str):
@@ -725,18 +786,9 @@ async def get_transfer_points():
                 ]
             })
         
-        return {
-            "success": True,
-            "transfer_points": transfer_points,
-            "total_count": len(transfer_points),
-            "network_coverage": {
-                "routes_with_transfers": len(set(
-                    route_id for point in journey_planner.transfer_points_cache.values()
-                    for route_id in point.routes
-                )),
-                "total_routes": len(simulator.routes) if simulator else 0
-            }
-        }
+        transfer_points = journey_planner.get_all_transfer_points()
+        return {"success": True, "transfer_points": transfer_points,
+                "total_count": len(transfer_points)}
         
     except Exception as e:
         print(f"Error getting transfer points: {e}")
@@ -833,7 +885,7 @@ async def get_nearby_stops(lat: float, lng: float, radius_km: float = 0.5):
     
     try:
         # Use journey planner's method to find nearby stops
-        nearby_stops = await journey_planner._find_nearby_stops(lat, lng, max_stops=10)
+        nearby_stops = journey_planner._find_nearby_stops(lat, lng, radius_km)
         
         # Group by route for better organization
         stops_by_route = {}
@@ -844,17 +896,17 @@ async def get_nearby_stops(lat: float, lng: float, radius_km: float = 0.5):
                 stops_by_route[route_id] = {
                     'route_id': route_id,
                     'route_name': route.name if route else route_id,
-                    'route_color': journey_planner._get_route_color(route_id),
+                'route_color': journey_planner._get_route_color(route_id),
                     'is_active': route_id in simulator.active_routes if simulator else False,
                     'stops': []
                 }
             
             stops_by_route[route_id]['stops'].append({
                 'stop_name': stop['stop_name'],
-                'stop_index': stop['stop_index'],
+                'stop_index': stop['stop_idx'],
                 'location': [stop['latitude'], stop['longitude']],
                 'distance_km': round(stop['distance_km'], 3),
-                'walk_time_minutes': round(stop['walk_time_minutes'], 1)
+                'walk_time_minutes': round(stop['walk_min'], 1)
             })
         
         return {
