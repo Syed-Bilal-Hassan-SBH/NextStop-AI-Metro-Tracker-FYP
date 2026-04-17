@@ -1,6 +1,7 @@
 export const API_CONFIG = {
-  BASE_URL: 'http://192.168.18.19:8000',  // Updated to YOUR computer's IP
-  WS_URL: 'ws://192.168.18.19:8000/ws/live-tracking',  // Updated WebSocket URL
+  // Android Emulator: use 10.0.2.2 to reach host machine localhost
+  BASE_URL: 'http://10.0.2.2:8000',
+  WS_URL: 'ws://10.0.2.2:8000/ws/live-tracking',
   ENDPOINTS: {
     // Routes
     ROUTES: '/api/routes',
