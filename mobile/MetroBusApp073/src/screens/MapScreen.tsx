@@ -15,7 +15,10 @@ import {
 import WebView from 'react-native-webview';
 import LoginScreen from './LoginScreen';
 import SignupScreen from './SignupScreen';
+<<<<<<< HEAD
 import MetroAssistantChatPanel from '../components/MetroAssistantChatPanel';
+=======
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
 import {API_CONFIG} from '../config/api';
 
 const {height: SCREEN_HEIGHT} = Dimensions.get('window');
@@ -97,9 +100,13 @@ const MapScreen = () => {
   const [buses, setBuses] = useState<Bus[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState('');
+<<<<<<< HEAD
   const [activeModal, setActiveModal] = useState<'list' | 'eticket' | 'journey' | 'assistant' | null>(null);
   /** Chat session survives closing the assistant sheet; cleared on full app restart or New chat. */
   const [assistantChatSessionId, setAssistantChatSessionId] = useState<string | null>(null);
+=======
+  const [activeModal, setActiveModal] = useState<'list' | 'eticket' | 'journey' | null>(null);
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
   const [authScreen, setAuthScreen] = useState<'login' | 'signup' | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
@@ -267,7 +274,11 @@ const MapScreen = () => {
     return () => clearInterval(iv);
   }, []);
 
+<<<<<<< HEAD
   const openModal = (type: 'list' | 'eticket' | 'journey' | 'assistant') => {
+=======
+  const openModal = (type: 'list' | 'eticket' | 'journey') => {
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
     setShowTopup(false);
     setJourneyResults(null);
     setJourneyError('');
@@ -1001,9 +1012,12 @@ const MapScreen = () => {
         <TouchableOpacity style={[s.fab, activeModal === 'eticket' && s.fabActive]} onPress={() => openModal('eticket')}>
           <Text style={s.fabIcon}>🎫</Text>
         </TouchableOpacity>
+<<<<<<< HEAD
         <TouchableOpacity style={[s.fab, activeModal === 'assistant' && s.fabActive]} onPress={() => openModal('assistant')}>
           <Text style={s.fabIcon}>💬</Text>
         </TouchableOpacity>
+=======
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
       </View>
 
       {/* Bottom Display Layers Popup */}
@@ -1094,7 +1108,10 @@ const MapScreen = () => {
               )}
               <Text style={s.modalTitle}>
                 {activeModal === 'list' ? '📋 Bus List' :
+<<<<<<< HEAD
                  activeModal === 'assistant' ? '💬 Metro Assistant' :
+=======
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
                  activeModal === 'journey' ? (selectingStop ? `Select ${selectingStop === 'from' ? 'From' : 'To'} Stop` : '🗺️ Journey Planner') :
                  activeModal === 'eticket' && ticketSelectingStop ? `Select ${ticketSelectingStop === 'from' ? 'Source' : 'Destination'} Stop` :
                  showTopup ? '💳 Top Up' : '🎫 E-Ticket'}
@@ -1399,6 +1416,7 @@ const MapScreen = () => {
               </ScrollView>
             )}
 
+<<<<<<< HEAD
             {/* METRO AI ASSISTANT */}
             {activeModal === 'assistant' && (
               <MetroAssistantChatPanel
@@ -1409,6 +1427,8 @@ const MapScreen = () => {
               />
             )}
 
+=======
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
             {/* BUS LIST */}
             {activeModal === 'list' && (
               <ScrollView style={s.modalBody} contentContainerStyle={{paddingBottom: 20}}>

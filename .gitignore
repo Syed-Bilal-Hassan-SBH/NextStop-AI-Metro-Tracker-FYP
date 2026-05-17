@@ -1,6 +1,9 @@
+<<<<<<< HEAD
 # Secrets (never commit)
 .env
 
+=======
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
 # Python
 __pycache__/
 *.py[cod]

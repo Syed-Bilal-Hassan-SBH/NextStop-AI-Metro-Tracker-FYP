@@ -1,7 +1,11 @@
 import React, {createContext, useContext, useState, useEffect, ReactNode} from 'react';
+<<<<<<< HEAD
 
 /** In-memory only (no native persistence) — avoids AsyncStorage native build on Android. */
 let persistedUserJson: string | null = null;
+=======
+import AsyncStorage from '@react-native-async-storage/async-storage';
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
 
 interface User {
   id: string;
@@ -33,7 +37,11 @@ export const AuthProvider = ({children}: {children: ReactNode}) => {
 
   const loadUserFromStorage = async () => {
     try {
+<<<<<<< HEAD
       const userData = persistedUserJson;
+=======
+      const userData = await AsyncStorage.getItem('user');
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
       if (userData) {
         setUser(JSON.parse(userData));
       }
@@ -55,7 +63,11 @@ export const AuthProvider = ({children}: {children: ReactNode}) => {
           walletBalance: 500,
         };
         
+<<<<<<< HEAD
         persistedUserJson = JSON.stringify(mockUser);
+=======
+        await AsyncStorage.setItem('user', JSON.stringify(mockUser));
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
         setUser(mockUser);
         return true;
       }
@@ -82,7 +94,11 @@ export const AuthProvider = ({children}: {children: ReactNode}) => {
           walletBalance: 0,
         };
         
+<<<<<<< HEAD
         persistedUserJson = JSON.stringify(newUser);
+=======
+        await AsyncStorage.setItem('user', JSON.stringify(newUser));
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
         setUser(newUser);
         return true;
       }
@@ -95,7 +111,11 @@ export const AuthProvider = ({children}: {children: ReactNode}) => {
 
   const logout = async () => {
     try {
+<<<<<<< HEAD
       persistedUserJson = null;
+=======
+      await AsyncStorage.removeItem('user');
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
@@ -106,7 +126,11 @@ export const AuthProvider = ({children}: {children: ReactNode}) => {
     if (user) {
       const updatedUser = {...user, walletBalance: user.walletBalance + amount};
       setUser(updatedUser);
+<<<<<<< HEAD
       persistedUserJson = JSON.stringify(updatedUser);
+=======
+      AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+>>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
     }
   };
 
