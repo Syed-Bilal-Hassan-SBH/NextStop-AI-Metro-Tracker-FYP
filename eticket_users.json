@@ -1,0 +1,147 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "Zain",
+      "email": "Zain@fast.com",
+      "phone": "+92342728942",
+      "age": "61",
+      "password": "Zainafgihaignaignaign",
+      "balance": 0,
+      "is_senior": true,
+      "created_at": "2026-02-12T13:55:24.776706"
+    },
+    {
+      "id": 2,
+      "name": "adfa",
+      "email": "Zain@fastQFQ.com",
+      "phone": "+92342728942",
+      "age": "54",
+      "password": "agafdjhagAHFAH",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-12T13:58:47.646385"
+    },
+    {
+      "id": 3,
+      "name": "Zain",
+      "email": "quraishizain500@gmail.com",
+      "phone": "+92342728942",
+      "age": "23",
+      "password": "Qur123",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-13T07:10:06.987270"
+    },
+    {
+      "id": 4,
+      "name": "afdaaag",
+      "email": "afadfdfa@agafa.co",
+      "phone": "+92342728942",
+      "age": "34",
+      "password": "asdfghjkl",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-13T07:14:29.951931"
+    },
+    {
+      "id": 5,
+      "name": "lkjh",
+      "email": "lkjh@lk.mn",
+      "phone": "+92342728942",
+      "age": "21",
+      "password": "lkjh",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-13T07:27:15.044508"
+    },
+    {
+      "id": 6,
+      "name": "bhvytv",
+      "email": "yufyuv@fx.mh",
+      "phone": "+92342728942",
+      "age": "12",
+      "password": "asdfgnm",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-13T10:29:23.106912"
+    },
+    {
+      "id": 7,
+      "name": "Hafiz",
+      "email": "Hafiz@erw.com",
+      "phone": "03241702398",
+      "age": "20",
+      "password": "adahfahjfhakfa",
+      "balance": 0,
+      "is_senior": false,
+      "created_at": "2026-02-27T05:00:17.069765"
+    },
+    {
+      "id": 8,
+      "name": "fdsa",
+      "email": "fdsa@fdsa.com",
+      "phone": "727276252",
+      "age": "20",
+      "password": "fdsa",
+      "balance": 7500,
+      "is_senior": false,
+      "created_at": "2026-02-27T07:01:55.243831"
+    },
+    {
+      "id": 9,
+      "name": "jkl",
+      "email": "jkl@jkl.com",
+      "phone": "234565432",
+      "age": "65",
+      "password": "jkl",
+      "balance": 200,
+      "is_senior": true,
+      "created_at": "2026-02-27T07:11:16.200443"
+    },
+    {
+      "id": 10,
+      "name": "Zain",
+      "email": "asdf@asdf.com",
+      "phone": "+92342728942",
+      "age": "61",
+      "password": "asdf",
+      "balance": 2000,
+      "is_senior": true,
+      "created_at": "2026-02-27T10:34:37.013008"
+    },
+    {
+      "id": 11,
+      "name": "op",
+      "email": "op@op.op",
+      "phone": "",
+      "age": 56,
+      "password": "opopop",
+      "balance": 2034,
+      "is_senior": false,
+      "created_at": "2026-03-08T22:35:21.090839"
+    },
+    {
+      "id": 12,
+      "name": "qw",
+      "email": "qw@qw.qw",
+      "phone": "",
+      "age": 19,
+      "password": "qwqwqw",
+      "balance": 200,
+      "is_senior": false,
+      "created_at": "2026-04-17T22:02:14.571649"
+    },
+    {
+      "id": 13,
+      "name": "Syed Bilal Hassan",
+      "email": "syedbilal8803@gmail.com",
+      "phone": "03467635081",
+      "age": "21",
+      "password": "12345678",
+      "balance": 100,
+      "is_senior": false,
+      "created_at": "2026-05-14T14:37:19.926256"
+    }
+  ]
+}

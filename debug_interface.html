@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Metro Bus Live Tracking - Debug Mode</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { width: 60%; height: 100vh; float: left; }
+        .debug-panel {
+            width: 40%;
+            height: 100vh;
+            float: right;
+            background: #f8f9fa;
+            padding: 15px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+        .info-section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .connection-status {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .connecting { background: #fff3cd; color: #856404; }
+        .data-display {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .bus-info {
+            margin: 5px 0;
+            padding: 8px;
+            background: #e3f2fd;
+            border-radius: 4px;
+            border-left: 4px solid #2196f3;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: monospace;
+        }
+        .log-info { background: #e3f2fd; }
+        .log-error { background: #ffebee; color: #c62828; }
+        .log-success { background: #e8f5e8; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="debug-panel">
+        <h3>🐛 Debug Panel</h3>
+        
+        <div id="connection-status" class="connection-status connecting">Connecting...</div>
+        
+        <div class="info-section">
+            <h4>📊 Connection Info</h4>
+            <div><strong>WebSocket URL:</strong> <span id="ws-url">-</span></div>
+            <div><strong>Attempts:</strong> <span id="connection-attempts">0</span></div>
+            <div><strong>Last Update:</strong> <span id="last-update">Never</span></div>
+        </div>
+
+        <div class="info-section">
+            <h4>📡 Raw Data Received</h4>
+            <div class="data-display" id="raw-data">No data received yet...</div>
+        </div>
+
+        <div class="info-section">
+            <h4>🚌 Parsed Bus Data</h4>
+            <div id="bus-list">No buses found...</div>
+        </div>
+
+        <div class="info-section">
+            <h4>📝 Debug Log</h4>
+            <div class="data-display" id="debug-log"></div>
+        </div>
+
+        <div class="info-section">
+            <h4>🔧 Manual Test</h4>
+            <button onclick="testApiCall()" style="margin: 5px; padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Test API Call</button>
+            <button onclick="testWebSocket()" style="margin: 5px; padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Reconnect WebSocket</button>
+            <button onclick="clearLogs()" style="margin: 5px; padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Clear Logs</button>
+        </div>
+    </div>
+
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([33.65, 73.05], 12);
+        
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Storage for markers and data
+        let busMarkers = {};
+        let stopMarkers = {};
+        let routePolylines = {};
+        let ws = null;
+        let reconnectInterval = null;
+        let connectionAttempts = 0;
+        let debugLogs = [];
+
+        // Custom bus icon
+        const busIcon = L.divIcon({
+            html: '<div style="background: #007cba; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">🚌</div>',
+            iconSize: [30, 30],
+            className: 'bus-marker'
+        });
+
+        const delayedBusIcon = L.divIcon({
+            html: '<div style="background: #dc3545; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">🚌</div>',
+            iconSize: [30, 30],
+            className: 'bus-marker-delayed'
+        });
+
+        // Debug logging function
+        function debugLog(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const logEntry = timestamp + ' - ' + message;
+            console.log(logEntry);
+            
+            debugLogs.push({timestamp, message, type});
+            
+            // Keep only last 50 logs
+            if (debugLogs.length > 50) {
+                debugLogs = debugLogs.slice(-50);
+            }
+            
+            updateDebugDisplay();
+        }
+
+        function updateDebugDisplay() {
+            const logContainer = document.getElementById('debug-log');
+            logContainer.innerHTML = debugLogs.map(log => 
+                '<div class="log-entry log-' + log.type + '">' + 
+                log.timestamp.split('T')[1].split('.')[0] + ' - ' + log.message + 
+                '</div>'
+            ).join('');
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function updateConnectionInfo() {
+            document.getElementById('connection-attempts').textContent = connectionAttempts;
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + window.location.host + '/ws/live-tracking';
+            document.getElementById('ws-url').textContent = wsUrl;
+        }
+
+        function updateConnectionStatus(status, message) {
+            const statusElement = document.getElementById('connection-status');
+            statusElement.textContent = message;
+            statusElement.className = 'connection-status ' + status;
+        }
+
+        // WebSocket connection
+        function connectWebSocket() {
+            connectionAttempts++;
+            updateConnectionInfo();
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + window.location.host + '/ws/live-tracking';
+            
+            debugLog('Attempting WebSocket connection #' + connectionAttempts + ' to: ' + wsUrl);
+            updateConnectionStatus('connecting', 'Connecting... (attempt ' + connectionAttempts + ')');
+            
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function(event) {
+                    debugLog('WebSocket connected successfully', 'success');
+                    updateConnectionStatus('connected', 'Connected');
+                    
+                    if (reconnectInterval) {
+                        clearInterval(reconnectInterval);
+                        reconnectInterval = null;
+                    }
+                    
+                    // Send periodic pings
+                    setInterval(function() {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send('ping');
+                            debugLog('Sent ping to server');
+                        }
+                    }, 25000);
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        if (event.data === 'pong') {
+                            debugLog('Received pong from server');
+                            return;
+                        }
+                        
+                        debugLog('Received WebSocket message (' + event.data.length + ' chars)', 'success');
+                        
+                        // Display raw data
+                        document.getElementById('raw-data').textContent = event.data;
+                        
+                        const data = JSON.parse(event.data);
+                        debugLog('Data keys: ' + Object.keys(data).join(', '));
+                        
+                        // Update timestamp
+                        document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                        
+                        // Process the data
+                        processReceivedData(data);
+                        
+                    } catch (error) {
+                        debugLog('Error parsing WebSocket message: ' + error.message, 'error');
+                        console.error('Full error:', error);
+                    }
+                };
+
+                ws.onclose = function(event) {
+                    debugLog('WebSocket disconnected. Code: ' + event.code + ', Reason: ' + event.reason, 'error');
+                    updateConnectionStatus('disconnected', 'Disconnected - Reconnecting...');
+                    
+                    if (!reconnectInterval) {
+                        reconnectInterval = setInterval(connectWebSocket, 3000);
+                    }
+                };
+
+                ws.onerror = function(error) {
+                    debugLog('WebSocket error: ' + error, 'error');
+                    updateConnectionStatus('disconnected', 'Connection Error');
+                };
+
+            } catch (error) {
+                debugLog('Failed to create WebSocket: ' + error.message, 'error');
+                updateConnectionStatus('disconnected', 'Connection Failed');
+                
+                if (!reconnectInterval) {
+                    reconnectInterval = setInterval(connectWebSocket, 5000);
+                }
+            }
+        }
+
+        // Process received data and try different structures
+        function processReceivedData(data) {
+            debugLog('Processing data structure...');
+            
+            let buses = [];
+            let dataSource = 'unknown';
+            
+            // Try different possible data structures
+            if (data.buses && Array.isArray(data.buses)) {
+                buses = data.buses;
+                dataSource = 'data.buses';
+            } else if (data.simulation_data && data.simulation_data.buses) {
+                buses = data.simulation_data.buses;
+                dataSource = 'data.simulation_data.buses';
+            } else if (Array.isArray(data)) {
+                buses = data;
+                dataSource = 'data (array)';
+            } else {
+                // Look for any array property that might contain bus data
+                for (let key in data) {
+                    if (Array.isArray(data[key]) && data[key].length > 0) {
+                        // Check if this array contains bus-like objects
+                        const firstItem = data[key][0];
+                        if (firstItem && (firstItem.bus_id || firstItem.id || firstItem.latitude || firstItem.lat)) {
+                            buses = data[key];
+                            dataSource = 'data.' + key;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            debugLog('Found ' + buses.length + ' buses in: ' + dataSource);
+            
+            // Update bus list display
+            updateBusList(buses, dataSource);
+            
+            // Update map
+            updateMapWithBuses(buses);
+            
+            // Handle routes if available
+            if (data.routes) {
+                debugLog('Found routes data');
+                updateMapWithRoutes(data.routes);
+            }
+        }
+
+        function updateBusList(buses, dataSource) {
+            const busList = document.getElementById('bus-list');
+            
+            if (buses.length === 0) {
+                busList.innerHTML = '<div style="color: #dc3545;">No buses found in data</div>';
+                return;
+            }
+            
+            let html = '<div><strong>Source:</strong> ' + dataSource + '</div>';
+            html += '<div><strong>Count:</strong> ' + buses.length + ' buses</div><br>';
+            
+            buses.forEach(function(bus, index) {
+                const busDiv = document.createElement('div');
+                busDiv.className = 'bus-info';
+                
+                // Show all available properties
+                let busInfo = '<strong>Bus #' + (index + 1) + '</strong><br>';
+                
+                // Common bus properties
+                const props = ['bus_id', 'id', 'latitude', 'longitude', 'lat', 'lng', 'current_lat', 'current_lng', 
+                              'speed', 'speed_kmh', 'status', 'route_id', 'passenger_count', 'delay_minutes'];
+                
+                props.forEach(function(prop) {
+                    if (bus[prop] !== undefined) {
+                        busInfo += '<small>' + prop + ': ' + bus[prop] + '</small><br>';
+                    }
+                });
+                
+                busDiv.innerHTML = busInfo;
+                busList.appendChild(busDiv);
+            });
+        }
+
+        function updateMapWithBuses(buses) {
+            debugLog('Updating map with ' + buses.length + ' buses');
+            
+            // Clear existing bus markers
+            Object.values(busMarkers).forEach(function(marker) {
+                map.removeLayer(marker);
+            });
+            busMarkers = {};
+            
+            let busesPlaced = 0;
+            
+            buses.forEach(function(bus) {
+                // Try different coordinate property combinations
+                let lat, lng, busId;
+                
+                // Get coordinates
+                if (bus.latitude && bus.longitude) {
+                    lat = bus.latitude;
+                    lng = bus.longitude;
+                } else if (bus.lat && bus.lng) {
+                    lat = bus.lat;
+                    lng = bus.lng;
+                } else if (bus.current_lat && bus.current_lng) {
+                    lat = bus.current_lat;
+                    lng = bus.current_lng;
+                }
+                
+                // Get bus ID
+                busId = bus.bus_id || bus.id || 'bus_' + busesPlaced;
+                
+                if (lat && lng) {
+                    debugLog('Placing bus ' + busId + ' at [' + lat + ', ' + lng + ']');
+                    
+                    const isDelayed = bus.delay_minutes > 5 || bus.status === 'delayed';
+                    const icon = isDelayed ? delayedBusIcon : busIcon;
+                    
+                    const marker = L.marker([lat, lng], { icon: icon }).addTo(map);
+                    
+                    // Create popup with all available info
+                    let popupContent = '<strong>Bus ' + busId + '</strong><br>';
+                    Object.keys(bus).forEach(function(key) {
+                        if (key !== 'latitude' && key !== 'longitude' && key !== 'lat' && key !== 'lng') {
+                            popupContent += key + ': ' + bus[key] + '<br>';
+                        }
+                    });
+                    
+                    marker.bindPopup(popupContent);
+                    busMarkers[busId] = marker;
+                    busesPlaced++;
+                } else {
+                    debugLog('Bus ' + busId + ' has no valid coordinates');
+                }
+            });
+            
+            debugLog('Successfully placed ' + busesPlaced + ' buses on map', 'success');
+            
+            // Fit map to show all buses if any were placed
+            if (busesPlaced > 0) {
+                const group = new L.featureGroup(Object.values(busMarkers));
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+        }
+
+        function updateMapWithRoutes(routes) {
+            // Handle route data if needed
+            debugLog('Processing routes data...');
+        }
+
+        // Manual test functions
+        async function testApiCall() {
+            debugLog('Testing manual API call...');
+            try {
+                const response = await fetch('/api/simulation/status');
+                const data = await response.json();
+                
+                debugLog('API call successful, received: ' + JSON.stringify(data).length + ' chars', 'success');
+                document.getElementById('raw-data').textContent = JSON.stringify(data, null, 2);
+                processReceivedData(data);
+                
+            } catch (error) {
+                debugLog('API call failed: ' + error.message, 'error');
+            }
+        }
+
+        function testWebSocket() {
+            debugLog('Manual WebSocket reconnection...');
+            if (ws) {
+                ws.close();
+            }
+            connectWebSocket();
+        }
+
+        function clearLogs() {
+            debugLogs = [];
+            updateDebugDisplay();
+            debugLog('Logs cleared');
+        }
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', function() {
+            debugLog('Debug panel initialized', 'success');
+            updateConnectionInfo();
+            connectWebSocket();
+            
+            // Test API call after 2 seconds
+            setTimeout(testApiCall, 2000);
+        });
+    </script>
+</body>
+</html>
