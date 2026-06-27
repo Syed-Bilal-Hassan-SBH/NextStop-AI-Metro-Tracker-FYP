@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🚌 Metro Bus 360 - Intelligent Transit Management System
 
 A state-of-the-art, real-time bidirectional metro bus simulation and management system powered by AI. This platform integrates live tracking, intelligent journey planning, traffic simulation, E-Ticket system, and comprehensive administrative controls into a unified solution.
