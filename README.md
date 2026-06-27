@@ -3,6 +3,13 @@
 
 A state-of-the-art, real-time bidirectional metro bus simulation and management system powered by AI. This platform integrates live tracking, intelligent journey planning, traffic simulation, E-Ticket system, and comprehensive administrative controls into a unified solution.
 
+## Architecture Diagram
+
+<p align="center"> <img src="./architecture.png" width="100%" alt="Syed Bilal Hassan Banner"> </p>
+
+<h1 align="center">System Architecture</h1>
+
+
 ## 🌟 Key Systems & Features
 
 ### 🌐 Core Simulation Engine (`bus_simulator.py`)
