@@ -1084,10 +1084,7 @@ This project is developed as a Final Year Project (FYP) for academic purposes.
 
 ## 📞 Support
 
-For issues or questions:
-- Open an issue on GitHub
-- Contact project maintainers
-- Check API documentation: http://localhost:8000/docs
+Contact syedbilal8803@gmail.com
 
 ---
 
@@ -1100,6 +1097,3 @@ For issues or questions:
 - All open-source contributors
 
 ---
-
-**Made with ❤️ for Pakistan's Public Transport System**
->>>>>>> f39032e1ee9266d572fbe4fe875815534e3604c0
